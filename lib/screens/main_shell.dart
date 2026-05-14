@@ -1,11 +1,10 @@
-import 'all_screens.dart';
-import 'all_screens.dart';
-import 'all_screens.dart';
-import 'all_screens.dart';
-import 'all_screens.dart';                                                                                                                                                               import 'all_screens.dart';
-import 'all_screens.dart';
-import 'all_screens.dart';
-import 'all_screens.dart';
+import 'package:flutter/material.dart';
+import '../theme/app_theme.dart';
+import 'home_screen.dart';
+import 'posts_screen.dart';
+import 'chat_list_screen.dart';
+import 'projects_screen.dart';
+import 'profile_screen.dart';
 
 class MainShell extends StatefulWidget {
   const MainShell({super.key});
