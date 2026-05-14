@@ -1,10 +1,6 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
-import 'home_screen.dart';
-import 'posts_screen.dart';
-import 'chat_list_screen.dart';
-import 'projects_screen.dart';
-import 'profile_screen.dart';
+import 'all_screens.dart';
 
 class MainShell extends StatefulWidget {
   const MainShell({super.key});
@@ -29,7 +25,7 @@ class _MainShellState extends State<MainShell> {
       body: IndexedStack(index: _index, children: _screens),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surface,
+          color: Colors.white,
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.08),
