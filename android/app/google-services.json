@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "145848279394",
+    "project_id": "uvds-c316e",
+    "storage_bucket": "uvds-c316e.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:145848279394:android:8717ec68d67e2a72f9cc3b",
+        "android_client_info": {
+          "package_name": "com.example.uvds_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD_gmlLb6VGbuA8m93H6VjunMvbB-6fTHk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
