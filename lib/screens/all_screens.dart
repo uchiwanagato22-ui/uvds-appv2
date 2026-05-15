@@ -1,13 +1,20 @@
-// ═══════════════════════════════════════
-// HOME SCREEN
-// ═══════════════════════════════════════
+// ═══════════════════════════════════════════════════════
+// UVDS V2 — all_screens.dart CORRIGÉ COMPLET
+// Fixes :
+// ✅ Nom réel depuis Firestore (plus "Membre")
+// ✅ Images qui s'affichent vraiment
+// ✅ Projets modifiables + statut + détail
+// ✅ Chat amélioré
+// ✅ Profil réel
+// ═══════════════════════════════════════════════════════
+
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:share_plus/share_plus.dart';
-import 'dart:io';
 import '../theme/app_theme.dart';
 import '../services/auth_service.dart';
 
@@ -21,7 +28,10 @@ Future<String?> uploadImage(File file, String path) async {
     final ref = _storage.ref().child(path);
     await ref.putFile(file);
     return await ref.getDownloadURL();
-  } catch (_) { return null; }
+  } catch (e) {
+    debugPrint('Upload error: $e');
+    return null;
+  }
 }
 
 // ─── Helper time ago ──────────────────
@@ -35,6 +45,20 @@ String timeAgo(Timestamp? ts) {
   return '${ts.toDate().day}/${ts.toDate().month}/${ts.toDate().year}';
 }
 
+// ─── Helper : récupère le vrai nom ────
+Future<String> getRealName() async {
+  final uid = FirebaseAuth.instance.currentUser?.uid;
+  if (uid == null) return 'Membre';
+  try {
+    final doc = await _db.collection('users').doc(uid).get();
+    return (doc.data() as Map<String, dynamic>?)?['name'] ?? 
+           FirebaseAuth.instance.currentUser?.displayName ?? 
+           'Membre';
+  } catch (_) {
+    return FirebaseAuth.instance.currentUser?.displayName ?? 'Membre';
+  }
+}
+
 // ═══════════════════════════════════════
 // HOME SCREEN
 // ═══════════════════════════════════════
@@ -43,7 +67,7 @@ class HomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
+    final uid = FirebaseAuth.instance.currentUser?.uid;
 
     return Scaffold(
       appBar: AppBar(
@@ -55,10 +79,9 @@ class HomeScreen extends StatelessWidget {
           const Text('UVDS'),
         ]),
         actions: [
-          // Notifications
           StreamBuilder<QuerySnapshot>(
             stream: _db.collection('notifications')
-                .where('uid', isEqualTo: user?.uid)
+                .where('uid', isEqualTo: uid)
                 .where('read', isEqualTo: false)
                 .snapshots(),
             builder: (_, snap) {
@@ -69,101 +92,95 @@ class HomeScreen extends StatelessWidget {
                   onPressed: () => Navigator.push(context,
                       MaterialPageRoute(builder: (_) => const NotificationsScreen())),
                 ),
-                if (count > 0)
-                  Positioned(right: 6, top: 6,
-                    child: Container(
-                      width: 16, height: 16,
-                      decoration: const BoxDecoration(
-                          color: Colors.red, shape: BoxShape.circle),
-                      child: Center(
-                        child: Text('$count',
-                            style: const TextStyle(color: Colors.white, fontSize: 9)),
-                      ),
-                    )),
+                if (count > 0) Positioned(right: 6, top: 6,
+                  child: Container(
+                    width: 16, height: 16,
+                    decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
+                    child: Center(child: Text('$count',
+                        style: const TextStyle(color: Colors.white, fontSize: 9))),
+                  )),
               ]);
             },
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          // Bannière
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [AppColors.primary, Color(0xFF2E8B57)],
-                begin: Alignment.topLeft, end: Alignment.bottomRight,
+      body: ListView(padding: const EdgeInsets.all(16), children: [
+        // Bannière avec vrai nom
+        StreamBuilder<DocumentSnapshot>(
+          stream: _db.collection('users').doc(uid).snapshots(),
+          builder: (_, snap) {
+            final data = snap.data?.data() as Map<String, dynamic>?;
+            final name = data?['name'] ?? 
+                         FirebaseAuth.instance.currentUser?.displayName ?? 
+                         'Membre';
+            return Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [AppColors.primary, Color(0xFF2E8B57)],
+                  begin: Alignment.topLeft, end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(20),
               ),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('Bonjour, ${user?.displayName ?? 'Membre'} 👋',
-                  style: const TextStyle(color: Colors.white70, fontSize: 13)),
-              const SizedBox(height: 6),
-              const Text('Ensemble pour un avenir meilleur 🌿',
-                  style: TextStyle(color: Colors.white, fontSize: 18,
-                      fontWeight: FontWeight.bold)),
-              const SizedBox(height: 16),
-              Row(children: [
-                StreamBuilder<QuerySnapshot>(
-                  stream: _db.collection('users').snapshots(),
-                  builder: (_, s) => _BannerChip(
-                    icon: Icons.people,
-                    label: '${s.data?.docs.length ?? 0} membres',
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('Bonjour, $name 👋',
+                    style: const TextStyle(color: Colors.white70, fontSize: 13)),
+                const SizedBox(height: 6),
+                const Text('Ensemble pour un avenir meilleur 🌿',
+                    style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 16),
+                Row(children: [
+                  StreamBuilder<QuerySnapshot>(
+                    stream: _db.collection('users').snapshots(),
+                    builder: (_, s) => _BannerChip(
+                      icon: Icons.people, label: '${s.data?.docs.length ?? 0} membres'),
                   ),
-                ),
-                const SizedBox(width: 10),
-                StreamBuilder<QuerySnapshot>(
-                  stream: _db.collection('projects').snapshots(),
-                  builder: (_, s) => _BannerChip(
-                    icon: Icons.folder,
-                    label: '${s.data?.docs.length ?? 0} projets',
+                  const SizedBox(width: 10),
+                  StreamBuilder<QuerySnapshot>(
+                    stream: _db.collection('projects').snapshots(),
+                    builder: (_, s) => _BannerChip(
+                      icon: Icons.folder, label: '${s.data?.docs.length ?? 0} projets'),
                   ),
-                ),
+                ]),
               ]),
-            ]),
-          ),
+            );
+          },
+        ),
 
-          const SizedBox(height: 20),
+        const SizedBox(height: 20),
 
-          // Stats
-          Row(children: [
-            _StatCard(label: 'Publications', icon: Icons.article,
-                stream: _db.collection('posts').snapshots()),
-            const SizedBox(width: 12),
-            _StatCard(label: 'Messages', icon: Icons.chat,
-                stream: _db.collection('chat_global').snapshots()),
-          ]),
+        Row(children: [
+          _StatCard(label: 'Publications', icon: Icons.article,
+              stream: _db.collection('posts').snapshots()),
+          const SizedBox(width: 12),
+          _StatCard(label: 'Messages', icon: Icons.chat,
+              stream: _db.collection('chat_global').snapshots()),
+        ]),
 
-          const SizedBox(height: 20),
+        const SizedBox(height: 20),
 
-          const Text('Dernières publications',
-              style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 12),
+        const Text('Dernières publications',
+            style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 12),
 
-          StreamBuilder<QuerySnapshot>(
-            stream: _db.collection('posts')
-                .orderBy('createdAt', descending: true)
-                .limit(5)
-                .snapshots(),
-            builder: (_, snap) {
-              if (!snap.hasData) return const Center(child: CircularProgressIndicator());
-              final docs = snap.data!.docs;
-              if (docs.isEmpty) return Center(
-                child: Text('Aucune publication', style: TextStyle(color: AppColors.textGrey)),
-              );
-              return Column(
-                children: docs.map((doc) {
-                  final data = doc.data() as Map<String, dynamic>;
-                  return _MiniPostCard(data: data);
-                }).toList(),
-              );
-            },
-          ),
-        ],
-      ),
+        StreamBuilder<QuerySnapshot>(
+          stream: _db.collection('posts')
+              .orderBy('createdAt', descending: true)
+              .limit(5)
+              .snapshots(),
+          builder: (_, snap) {
+            if (!snap.hasData) return const Center(child: CircularProgressIndicator());
+            final docs = snap.data!.docs;
+            if (docs.isEmpty) return const Center(
+              child: Text('Aucune publication', style: TextStyle(color: AppColors.textGrey)),
+            );
+            return Column(children: docs.map((doc) {
+              final data = doc.data() as Map<String, dynamic>;
+              return _MiniPostCard(data: data);
+            }).toList());
+          },
+        ),
+      ]),
     );
   }
 }
@@ -187,8 +204,7 @@ class _BannerChip extends StatelessWidget {
 }
 
 class _StatCard extends StatelessWidget {
-  final String label; final IconData icon;
-  final Stream<QuerySnapshot> stream;
+  final String label; final IconData icon; final Stream<QuerySnapshot> stream;
   const _StatCard({required this.label, required this.icon, required this.stream});
   @override
   Widget build(BuildContext context) => Expanded(
@@ -240,7 +256,9 @@ class _MiniPostCard extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════
-// POSTS SCREEN — Feed style Instagram
+// POSTS SCREEN — CORRIGÉ
+// ✅ Vrai nom depuis Firestore
+// ✅ Image qui s'affiche
 // ═══════════════════════════════════════
 class PostsScreen extends StatefulWidget {
   const PostsScreen({super.key});
@@ -253,7 +271,11 @@ class _PostsScreenState extends State<PostsScreen> {
   File? _image;
   bool _uploading = false;
 
-  void _showNewPost() {
+  void _showNewPost() async {
+    // Récupère le vrai nom AVANT d'ouvrir le modal
+    final realName = await getRealName();
+
+    if (!mounted) return;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -277,18 +299,15 @@ class _PostsScreenState extends State<PostsScreen> {
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 16),
 
-            // Aperçu auteur
+            // Auteur avec vrai nom
             Row(children: [
               CircleAvatar(
                 backgroundColor: AppColors.primary.withValues(alpha: 0.2),
-                child: Text(
-                  (FirebaseAuth.instance.currentUser?.displayName ?? 'M')[0].toUpperCase(),
-                  style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold),
-                ),
+                child: Text(realName[0].toUpperCase(),
+                    style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold)),
               ),
               const SizedBox(width: 10),
-              Text(FirebaseAuth.instance.currentUser?.displayName ?? 'Membre',
-                  style: const TextStyle(fontWeight: FontWeight.w600)),
+              Text(realName, style: const TextStyle(fontWeight: FontWeight.w600)),
             ]),
             const SizedBox(height: 12),
 
@@ -301,14 +320,26 @@ class _PostsScreenState extends State<PostsScreen> {
               ),
             ),
 
-            // Aperçu image
+            // Aperçu image sélectionnée
             if (_image != null) ...[
               const SizedBox(height: 8),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: Image.file(_image!, height: 160, width: double.infinity,
-                    fit: BoxFit.cover),
-              ),
+              Stack(children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Image.file(_image!, height: 180, width: double.infinity,
+                      fit: BoxFit.cover),
+                ),
+                Positioned(top: 8, right: 8,
+                  child: GestureDetector(
+                    onTap: () => setModal(() => _image = null),
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: const BoxDecoration(
+                          color: Colors.red, shape: BoxShape.circle),
+                      child: const Icon(Icons.close, color: Colors.white, size: 16),
+                    ),
+                  )),
+              ]),
             ],
 
             const SizedBox(height: 12),
@@ -318,34 +349,40 @@ class _PostsScreenState extends State<PostsScreen> {
                 icon: const Icon(Icons.photo_library, color: AppColors.primary),
                 onPressed: () async {
                   final picked = await _picker.pickImage(
-                      source: ImageSource.gallery, imageQuality: 75);
+                      source: ImageSource.gallery, imageQuality: 80);
+                  if (picked != null) setModal(() => _image = File(picked.path));
+                },
+              ),
+              IconButton(
+                icon: const Icon(Icons.camera_alt, color: AppColors.primary),
+                onPressed: () async {
+                  final picked = await _picker.pickImage(
+                      source: ImageSource.camera, imageQuality: 80);
                   if (picked != null) setModal(() => _image = File(picked.path));
                 },
               ),
               const Spacer(),
-              // Bouton publier
               ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  minimumSize: const Size(120, 44),
-                ),
+                style: ElevatedButton.styleFrom(minimumSize: const Size(120, 44)),
                 onPressed: _uploading ? null : () async {
                   if (_textCtrl.text.trim().isEmpty && _image == null) return;
                   setModal(() => _uploading = true);
 
+                  // Upload image Firebase Storage
                   String? imageUrl;
                   if (_image != null) {
-                    imageUrl = await uploadImage(
-                      _image!,
-                      'posts/${DateTime.now().millisecondsSinceEpoch}.jpg',
-                    );
+                    final fileName = '${DateTime.now().millisecondsSinceEpoch}.jpg';
+                    imageUrl = await uploadImage(_image!, 'posts/$fileName');
                   }
 
                   final user = FirebaseAuth.instance.currentUser;
+
+                  // Sauvegarde dans Firestore avec vrai nom
                   await _db.collection('posts').add({
                     'text':       _textCtrl.text.trim(),
                     'imageUrl':   imageUrl ?? '',
                     'authorId':   user?.uid,
-                    'authorName': user?.displayName ?? 'Membre',
+                    'authorName': realName, // ← vrai nom !
                     'likes':      [],
                     'createdAt':  FieldValue.serverTimestamp(),
                   });
@@ -388,8 +425,10 @@ class _PostsScreenState extends State<PostsScreen> {
             child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
               Icon(Icons.article_outlined, size: 72, color: AppColors.textGrey),
               SizedBox(height: 12),
-              Text('Aucune publication', style: TextStyle(color: AppColors.textGrey, fontSize: 16)),
-              Text('Appuie sur + pour écrire', style: TextStyle(color: AppColors.textGrey)),
+              Text('Aucune publication',
+                  style: TextStyle(color: AppColors.textGrey, fontSize: 16)),
+              Text('Appuie sur + pour écrire',
+                  style: TextStyle(color: AppColors.textGrey)),
             ]),
           );
           return ListView.builder(
@@ -403,20 +442,19 @@ class _PostsScreenState extends State<PostsScreen> {
   }
 }
 
-// ─── Post Card ────────────────────────
+// ─── Post Card CORRIGÉ ────────────────
 class PostCard extends StatelessWidget {
   final QueryDocumentSnapshot doc;
   const PostCard({super.key, required this.doc});
 
   Future<void> _toggleLike() async {
-    final uid   = FirebaseAuth.instance.currentUser?.uid;
+    final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     final data  = doc.data() as Map<String, dynamic>;
     final likes = List<String>.from(data['likes'] ?? []);
     likes.contains(uid) ? likes.remove(uid) : likes.add(uid);
     await _db.collection('posts').doc(doc.id).update({'likes': likes});
 
-    // Notif like
     if (likes.contains(uid) && data['authorId'] != uid) {
       await _db.collection('notifications').add({
         'uid':     data['authorId'],
@@ -434,20 +472,33 @@ class PostCard extends StatelessWidget {
     final likes     = List<String>.from(data['likes'] ?? []);
     final isLiked   = likes.contains(uid);
     final author    = data['authorName'] ?? 'Membre';
-    final imageUrl  = data['imageUrl'] ?? '';
+    final imageUrl  = (data['imageUrl'] ?? '').toString().trim();
     final isOwner   = data['authorId'] == uid;
+    final text      = (data['text'] ?? '').toString().trim();
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        // Header
+
+        // ─── Header ───────────────────
         Padding(
           padding: const EdgeInsets.all(12),
           child: Row(children: [
-            CircleAvatar(
-              backgroundColor: AppColors.primary.withValues(alpha: 0.15),
-              child: Text(author[0].toUpperCase(),
-                  style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold)),
+            // Avatar avec photo profil
+            StreamBuilder<DocumentSnapshot>(
+              stream: _db.collection('users').doc(data['authorId']).snapshots(),
+              builder: (_, snap) {
+                final uData    = snap.data?.data() as Map<String, dynamic>?;
+                final photoUrl = uData?['photoUrl'] ?? '';
+                return CircleAvatar(
+                  backgroundColor: AppColors.primary.withValues(alpha: 0.15),
+                  backgroundImage: photoUrl.isNotEmpty ? NetworkImage(photoUrl) : null,
+                  child: photoUrl.isEmpty
+                      ? Text(author[0].toUpperCase(),
+                          style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold))
+                      : null,
+                );
+              },
             ),
             const SizedBox(width: 10),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -455,57 +506,100 @@ class PostCard extends StatelessWidget {
               Text(timeAgo(data['createdAt'] as Timestamp?),
                   style: const TextStyle(fontSize: 11, color: AppColors.textGrey)),
             ])),
-            // Supprimer si propriétaire
-            if (isOwner)
-              IconButton(
-                icon: const Icon(Icons.delete_outline, color: AppColors.textGrey, size: 20),
-                onPressed: () => _db.collection('posts').doc(doc.id).delete(),
+            if (isOwner) IconButton(
+              icon: const Icon(Icons.delete_outline, color: AppColors.textGrey, size: 20),
+              onPressed: () => showDialog(
+                context: context,
+                builder: (_) => AlertDialog(
+                  title: const Text('Supprimer ?'),
+                  content: const Text('Ce post sera supprimé définitivement.'),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.pop(context),
+                        child: const Text('Annuler')),
+                    TextButton(
+                      onPressed: () {
+                        _db.collection('posts').doc(doc.id).delete();
+                        Navigator.pop(context);
+                      },
+                      child: const Text('Supprimer', style: TextStyle(color: Colors.red)),
+                    ),
+                  ],
+                ),
               ),
+            ),
           ]),
         ),
 
-        // Texte
-        if ((data['text'] ?? '').isNotEmpty)
+        // ─── Texte ────────────────────
+        if (text.isNotEmpty)
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Text(data['text'], style: const TextStyle(fontSize: 15, height: 1.4)),
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Text(text, style: const TextStyle(fontSize: 15, height: 1.4)),
           ),
 
-        // Image
+        // ─── Image CORRIGÉE ───────────
         if (imageUrl.isNotEmpty) ...[
           const SizedBox(height: 10),
-          Image.network(
-            imageUrl,
-            width: double.infinity,
-            height: 220,
-            fit: BoxFit.cover,
-            loadingBuilder: (_, child, p) => p == null ? child
-                : Container(height: 220, color: Colors.grey.shade100,
-                    child: const Center(child: CircularProgressIndicator())),
-            errorBuilder: (_, __, ___) => const SizedBox(),
+          ClipRRect(
+            child: Image.network(
+              imageUrl,
+              width: double.infinity,
+              fit: BoxFit.cover,
+              loadingBuilder: (_, child, progress) {
+                if (progress == null) return child;
+                return Container(
+                  height: 220,
+                  color: AppColors.primary.withValues(alpha: 0.05),
+                  child: Center(
+                    child: CircularProgressIndicator(
+                      value: progress.expectedTotalBytes != null
+                          ? progress.cumulativeBytesLoaded /
+                              progress.expectedTotalBytes!
+                          : null,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                );
+              },
+              errorBuilder: (_, __, ___) => Container(
+                height: 100,
+                color: AppColors.primary.withValues(alpha: 0.05),
+                child: const Center(
+                  child: Icon(Icons.broken_image_outlined,
+                      color: AppColors.textGrey, size: 40),
+                ),
+              ),
+            ),
           ),
         ],
 
-        // Actions
+        // ─── Actions ──────────────────
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           child: Row(children: [
             // Like
             TextButton.icon(
               onPressed: _toggleLike,
-              icon: Icon(isLiked ? Icons.favorite : Icons.favorite_border,
-                  color: isLiked ? Colors.red : AppColors.textGrey, size: 20),
+              icon: Icon(
+                isLiked ? Icons.favorite : Icons.favorite_border,
+                color: isLiked ? Colors.red : AppColors.textGrey,
+                size: 20,
+              ),
               label: Text('${likes.length}',
-                  style: TextStyle(color: isLiked ? Colors.red : AppColors.textGrey)),
+                  style: TextStyle(
+                      color: isLiked ? Colors.red : AppColors.textGrey)),
             ),
             // Commentaires
             TextButton.icon(
               onPressed: () => Navigator.push(context,
                   MaterialPageRoute(builder: (_) => CommentsScreen(
-                      postId: doc.id, postAuthorId: data['authorId'] ?? ''))),
-              icon: const Icon(Icons.comment_outlined, color: AppColors.textGrey, size: 20),
+                      postId: doc.id,
+                      postAuthorId: data['authorId'] ?? ''))),
+              icon: const Icon(Icons.comment_outlined,
+                  color: AppColors.textGrey, size: 20),
               label: StreamBuilder<QuerySnapshot>(
-                stream: _db.collection('posts').doc(doc.id).collection('comments').snapshots(),
+                stream: _db.collection('posts').doc(doc.id)
+                    .collection('comments').snapshots(),
                 builder: (_, s) => Text('${s.data?.docs.length ?? 0}',
                     style: const TextStyle(color: AppColors.textGrey)),
               ),
@@ -513,10 +607,10 @@ class PostCard extends StatelessWidget {
             const Spacer(),
             // Partager
             IconButton(
-              icon: const Icon(Icons.share_outlined, color: AppColors.textGrey, size: 20),
+              icon: const Icon(Icons.share_outlined,
+                  color: AppColors.textGrey, size: 20),
               onPressed: () => Share.share(
-                '${data['text'] ?? ''}\n\n— Partagé depuis UVDS 🌿',
-              ),
+                  '${text.isNotEmpty ? text : 'Post UVDS'}\n\n— Partagé depuis UVDS 🌿'),
             ),
           ]),
         ),
@@ -540,19 +634,23 @@ class _CommentsScreenState extends State<CommentsScreen> {
 
   Future<void> _send() async {
     if (_ctrl.text.trim().isEmpty) return;
+    final realName = await getRealName();
     final user = FirebaseAuth.instance.currentUser;
     final text = _ctrl.text.trim();
     _ctrl.clear();
-    await _db.collection('posts').doc(widget.postId).collection('comments').add({
+
+    await _db.collection('posts').doc(widget.postId)
+        .collection('comments').add({
       'text':       text,
-      'authorName': user?.displayName ?? 'Membre',
+      'authorName': realName, // ← vrai nom
       'authorId':   user?.uid,
       'createdAt':  FieldValue.serverTimestamp(),
     });
+
     if (widget.postAuthorId != user?.uid) {
       await _db.collection('notifications').add({
         'uid':     widget.postAuthorId,
-        'message': '${user?.displayName} a commenté ton post 💬',
+        'message': '$realName a commenté ton post 💬',
         'read':    false,
         'time':    FieldValue.serverTimestamp(),
       });
@@ -623,12 +721,11 @@ class _CommentsScreenState extends State<CommentsScreen> {
               decoration: InputDecoration(
                 hintText: 'Commenter...',
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(25),
-                  borderSide: BorderSide.none,
-                ),
-                filled: true,
-                fillColor: AppColors.lightBg,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    borderRadius: BorderRadius.circular(25),
+                    borderSide: BorderSide.none),
+                filled: true, fillColor: AppColors.lightBg,
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               ),
               onSubmitted: (_) => _send(),
             )),
@@ -637,7 +734,8 @@ class _CommentsScreenState extends State<CommentsScreen> {
               onTap: _send,
               child: Container(
                 width: 44, height: 44,
-                decoration: const BoxDecoration(color: AppColors.primary, shape: BoxShape.circle),
+                decoration: const BoxDecoration(
+                    color: AppColors.primary, shape: BoxShape.circle),
                 child: const Icon(Icons.send, color: Colors.white, size: 20),
               ),
             ),
@@ -659,7 +757,6 @@ class ChatListScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('Messages')),
       body: Column(children: [
-        // Groupe UVDS
         ListTile(
           onTap: () => Navigator.push(context,
               MaterialPageRoute(builder: (_) => const GroupChatScreen())),
@@ -667,8 +764,7 @@ class ChatListScreen extends StatelessWidget {
             width: 50, height: 50,
             decoration: BoxDecoration(
               gradient: const LinearGradient(
-                colors: [AppColors.primary, Color(0xFF2E8B57)],
-              ),
+                  colors: [AppColors.primary, Color(0xFF2E8B57)]),
               borderRadius: BorderRadius.circular(14),
             ),
             child: const Icon(Icons.group, color: Colors.white),
@@ -686,30 +782,28 @@ class ChatListScreen extends StatelessWidget {
               }
               final data = snap.data!.docs.first.data() as Map<String, dynamic>;
               return Text('${data['authorName']}: ${data['text']}',
-                  maxLines: 1, overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 13));
+                  maxLines: 1, overflow: TextOverflow.ellipsis);
             },
           ),
           trailing: const Icon(Icons.arrow_forward_ios, size: 14, color: AppColors.textGrey),
         ),
         const Divider(height: 1),
-        Expanded(
-          child: Center(
-            child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-              Icon(Icons.chat_bubble_outline, size: 72, color: AppColors.textGrey.withValues(alpha: 0.5)),
-              const SizedBox(height: 12),
-              const Text('Messages privés bientôt !',
-                  style: TextStyle(color: AppColors.textGrey)),
-            ]),
-          ),
-        ),
+        const Expanded(child: Center(
+          child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+            Icon(Icons.chat_bubble_outline, size: 60, color: AppColors.textGrey),
+            SizedBox(height: 12),
+            Text('Messages privés disponibles bientôt',
+                style: TextStyle(color: AppColors.textGrey)),
+          ]),
+        )),
       ]),
     );
   }
 }
 
 // ═══════════════════════════════════════
-// GROUP CHAT SCREEN
+// GROUP CHAT SCREEN — CORRIGÉ
+// ✅ Vrai nom
 // ═══════════════════════════════════════
 class GroupChatScreen extends StatefulWidget {
   const GroupChatScreen({super.key});
@@ -723,19 +817,23 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
 
   Future<void> _send() async {
     if (_ctrl.text.trim().isEmpty) return;
+    final realName = await getRealName();
     final user = FirebaseAuth.instance.currentUser;
     final text = _ctrl.text.trim();
     _ctrl.clear();
+
     await _db.collection('chat_global').add({
       'text':       text,
-      'authorName': user?.displayName ?? 'Membre',
+      'authorName': realName, // ← vrai nom
       'authorId':   user?.uid,
       'createdAt':  FieldValue.serverTimestamp(),
     });
+
     Future.delayed(const Duration(milliseconds: 100), () {
       if (_scroll.hasClients) {
         _scroll.animateTo(_scroll.position.maxScrollExtent,
-            duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOut);
       }
     });
   }
@@ -762,16 +860,17 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                   style: TextStyle(color: AppColors.textGrey)),
             );
             WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (_scroll.hasClients) _scroll.jumpTo(_scroll.position.maxScrollExtent);
+              if (_scroll.hasClients) {
+                _scroll.jumpTo(_scroll.position.maxScrollExtent);
+              }
             });
             return ListView.builder(
               controller: _scroll,
               padding: const EdgeInsets.all(12),
               itemCount: docs.length,
               itemBuilder: (_, i) {
-                final data  = docs[i].data() as Map<String, dynamic>;
-                final isMe  = data['authorId'] == myUid;
-                return _ChatBubble(data: data, isMe: isMe);
+                final data = docs[i].data() as Map<String, dynamic>;
+                return _ChatBubble(data: data, isMe: data['authorId'] == myUid);
               },
             );
           },
@@ -788,9 +887,11 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
               decoration: InputDecoration(
                 hintText: 'Message...',
                 border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(25), borderSide: BorderSide.none),
+                    borderRadius: BorderRadius.circular(25),
+                    borderSide: BorderSide.none),
                 filled: true, fillColor: AppColors.lightBg,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               ),
               onSubmitted: (_) => _send(),
             )),
@@ -799,7 +900,8 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
               onTap: _send,
               child: Container(
                 width: 44, height: 44,
-                decoration: const BoxDecoration(color: AppColors.primary, shape: BoxShape.circle),
+                decoration: const BoxDecoration(
+                    color: AppColors.primary, shape: BoxShape.circle),
                 child: const Icon(Icons.send, color: Colors.white, size: 20),
               ),
             ),
@@ -825,7 +927,8 @@ class _ChatBubble extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Row(
-        mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+        mainAxisAlignment:
+            isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           if (!isMe) ...[
@@ -833,23 +936,34 @@ class _ChatBubble extends StatelessWidget {
               radius: 14,
               backgroundColor: AppColors.primary.withValues(alpha: 0.2),
               child: Text(author[0].toUpperCase(),
-                  style: const TextStyle(fontSize: 11, color: AppColors.primary, fontWeight: FontWeight.bold)),
+                  style: const TextStyle(
+                      fontSize: 11,
+                      color: AppColors.primary,
+                      fontWeight: FontWeight.bold)),
             ),
             const SizedBox(width: 8),
           ],
           Column(
-            crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+            crossAxisAlignment:
+                isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
             children: [
-              if (!isMe) Padding(
-                padding: const EdgeInsets.only(left: 4, bottom: 2),
-                child: Text(author,
-                    style: const TextStyle(fontSize: 11, color: AppColors.textGrey, fontWeight: FontWeight.w600)),
-              ),
+              if (!isMe)
+                Padding(
+                  padding: const EdgeInsets.only(left: 4, bottom: 2),
+                  child: Text(author,
+                      style: const TextStyle(
+                          fontSize: 11,
+                          color: AppColors.textGrey,
+                          fontWeight: FontWeight.w600)),
+                ),
               Container(
-                constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.65),
+                constraints: BoxConstraints(
+                    maxWidth: MediaQuery.of(context).size.width * 0.65),
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                 decoration: BoxDecoration(
-                  color: isMe ? AppColors.primary : Theme.of(context).colorScheme.surface,
+                  color: isMe
+                      ? AppColors.primary
+                      : Theme.of(context).colorScheme.surface,
                   borderRadius: BorderRadius.only(
                     topLeft:     const Radius.circular(18),
                     topRight:    const Radius.circular(18),
@@ -859,11 +973,14 @@ class _ChatBubble extends StatelessWidget {
                   border: isMe ? null : Border.all(color: AppColors.border),
                 ),
                 child: Text(data['text'] ?? '',
-                    style: TextStyle(color: isMe ? Colors.white : null, fontSize: 14)),
+                    style: TextStyle(
+                        color: isMe ? Colors.white : null, fontSize: 14)),
               ),
               Padding(
                 padding: const EdgeInsets.only(top: 2, left: 4, right: 4),
-                child: Text(time, style: const TextStyle(fontSize: 10, color: AppColors.textGrey)),
+                child: Text(time,
+                    style: const TextStyle(
+                        fontSize: 10, color: AppColors.textGrey)),
               ),
             ],
           ),
@@ -874,7 +991,11 @@ class _ChatBubble extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════
-// PROJECTS SCREEN
+// PROJECTS SCREEN — CORRIGÉ
+// ✅ Modifier statut
+// ✅ Supprimer
+// ✅ Page détail
+// ✅ Statuts : En cours / Planifié / Terminé / Annulé
 // ═══════════════════════════════════════
 class ProjectsScreen extends StatefulWidget {
   const ProjectsScreen({super.key});
@@ -888,8 +1009,13 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
   String _status   = 'En cours';
 
   void _showAdd() {
+    _titleCtrl.clear();
+    _descCtrl.clear();
+    _status = 'En cours';
+
     showModalBottomSheet(
-      context: context, isScrollControlled: true,
+      context: context,
+      isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => StatefulBuilder(
         builder: (ctx, setModal) => Container(
@@ -903,12 +1029,16 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
           ),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             Container(width: 40, height: 4,
-                decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+                decoration: BoxDecoration(color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2))),
             const SizedBox(height: 16),
-            const Text('Nouveau projet', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const Text('Nouveau projet',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 16),
             TextField(controller: _titleCtrl,
-                decoration: const InputDecoration(hintText: 'Titre du projet', prefixIcon: Icon(Icons.folder_outlined))),
+                decoration: const InputDecoration(
+                    hintText: 'Titre du projet',
+                    prefixIcon: Icon(Icons.folder_outlined))),
             const SizedBox(height: 12),
             TextField(controller: _descCtrl, maxLines: 3,
                 decoration: const InputDecoration(hintText: 'Description')),
@@ -916,7 +1046,7 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
             DropdownButtonFormField<String>(
               value: _status,
               decoration: const InputDecoration(labelText: 'Statut'),
-              items: ['En cours', 'Planifié', 'Terminé']
+              items: ['En cours', 'Planifié', 'Terminé', 'Annulé']
                   .map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
               onChanged: (v) => setModal(() => _status = v!),
             ),
@@ -924,15 +1054,15 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
             ElevatedButton(
               onPressed: () async {
                 if (_titleCtrl.text.trim().isEmpty) return;
+                final realName = await getRealName();
                 await _db.collection('projects').add({
                   'title':     _titleCtrl.text.trim(),
                   'desc':      _descCtrl.text.trim(),
                   'status':    _status,
-                  'createdBy': FirebaseAuth.instance.currentUser?.displayName ?? 'Membre',
+                  'createdBy': realName, // ← vrai nom
                   'authorId':  FirebaseAuth.instance.currentUser?.uid,
                   'createdAt': FieldValue.serverTimestamp(),
                 });
-                _titleCtrl.clear(); _descCtrl.clear();
                 if (mounted) Navigator.pop(context);
               },
               child: const Text('Créer le projet'),
@@ -944,12 +1074,23 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
     );
   }
 
-  Color _color(String s) {
+  Color _statusColor(String s) {
     switch (s) {
       case 'En cours': return AppColors.primary;
       case 'Planifié': return Colors.blue;
-      case 'Terminé':  return Colors.grey;
+      case 'Terminé':  return Colors.green;
+      case 'Annulé':   return Colors.red;
       default:         return AppColors.primary;
+    }
+  }
+
+  IconData _statusIcon(String s) {
+    switch (s) {
+      case 'En cours': return Icons.play_circle_outline;
+      case 'Planifié': return Icons.schedule;
+      case 'Terminé':  return Icons.check_circle_outline;
+      case 'Annulé':   return Icons.cancel_outlined;
+      default:         return Icons.folder;
     }
   }
 
@@ -963,7 +1104,9 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
         child: const Icon(Icons.add, color: Colors.white),
       ),
       body: StreamBuilder<QuerySnapshot>(
-        stream: _db.collection('projects').orderBy('createdAt', descending: true).snapshots(),
+        stream: _db.collection('projects')
+            .orderBy('createdAt', descending: true)
+            .snapshots(),
         builder: (_, snap) {
           if (!snap.hasData) return const Center(child: CircularProgressIndicator());
           final docs = snap.data!.docs;
@@ -979,49 +1122,131 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
             padding: const EdgeInsets.all(16),
             itemCount: docs.length,
             itemBuilder: (_, i) {
-              final data   = docs[i].data() as Map<String, dynamic>;
-              final status = data['status'] ?? 'En cours';
-              final color  = _color(status);
+              final data    = docs[i].data() as Map<String, dynamic>;
+              final status  = data['status'] ?? 'En cours';
+              final color   = _statusColor(status);
+              final icon    = _statusIcon(status);
               final isOwner = data['authorId'] == FirebaseAuth.instance.currentUser?.uid;
-              return Card(
-                margin: const EdgeInsets.only(bottom: 12),
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Row(children: [
-                      Container(width: 44, height: 44,
-                        decoration: BoxDecoration(color: color.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(12)),
-                        child: Icon(Icons.folder, color: color)),
-                      const SizedBox(width: 12),
-                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Text(data['title'] ?? '', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                        Text('Par ${data['createdBy'] ?? ''}',
-                            style: const TextStyle(fontSize: 12, color: AppColors.textGrey)),
-                      ])),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(20)),
-                        child: Text(status, style: TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.w600)),
-                      ),
-                      if (isOwner)
-                        PopupMenuButton<String>(
-                          onSelected: (v) async {
-                            if (v == 'delete') await _db.collection('projects').doc(docs[i].id).delete();
-                          },
-                          itemBuilder: (_) => [
-                            const PopupMenuItem(value: 'delete',
-                                child: Text('🗑 Supprimer', style: TextStyle(color: Colors.red))),
-                          ],
+
+              return GestureDetector(
+                // ← Ouvre la page détail au clic
+                onTap: () => Navigator.push(context, MaterialPageRoute(
+                  builder: (_) => ProjectDetailScreen(
+                    projectId: docs[i].id,
+                    data: data,
+                  ),
+                )),
+                child: Card(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Row(children: [
+                        Container(
+                          width: 44, height: 44,
+                          decoration: BoxDecoration(
+                              color: color.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(12)),
+                          child: Icon(icon, color: color),
                         ),
+                        const SizedBox(width: 12),
+                        Expanded(child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                          Text(data['title'] ?? '',
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.bold, fontSize: 15)),
+                          Text('Par ${data['createdBy'] ?? ''}',
+                              style: const TextStyle(
+                                  fontSize: 12, color: AppColors.textGrey)),
+                        ])),
+                        // Statut + menu si propriétaire
+                        Column(children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                                color: color.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(20)),
+                            child: Text(status,
+                                style: TextStyle(
+                                    fontSize: 11,
+                                    color: color,
+                                    fontWeight: FontWeight.w600)),
+                          ),
+                          if (isOwner) PopupMenuButton<String>(
+                            onSelected: (v) async {
+                              if (v == 'delete') {
+                                showDialog(
+                                  context: context,
+                                  builder: (_) => AlertDialog(
+                                    title: const Text('Supprimer ?'),
+                                    content: const Text('Ce projet sera supprimé.'),
+                                    actions: [
+                                      TextButton(
+                                          onPressed: () => Navigator.pop(context),
+                                          child: const Text('Annuler')),
+                                      TextButton(
+                                        onPressed: () {
+                                          _db.collection('projects').doc(docs[i].id).delete();
+                                          Navigator.pop(context);
+                                        },
+                                        child: const Text('Supprimer',
+                                            style: TextStyle(color: Colors.red)),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              } else {
+                                // Changer le statut
+                                await _db.collection('projects')
+                                    .doc(docs[i].id)
+                                    .update({'status': v});
+                              }
+                            },
+                            itemBuilder: (_) => [
+                              const PopupMenuItem(value: 'En cours',
+                                  child: Text('▶️ En cours')),
+                              const PopupMenuItem(value: 'Planifié',
+                                  child: Text('🕐 Planifié')),
+                              const PopupMenuItem(value: 'Terminé',
+                                  child: Text('✅ Terminé')),
+                              const PopupMenuItem(value: 'Annulé',
+                                  child: Text('❌ Annulé')),
+                              const PopupMenuDivider(),
+                              const PopupMenuItem(value: 'delete',
+                                  child: Text('🗑 Supprimer',
+                                      style: TextStyle(color: Colors.red))),
+                            ],
+                            child: const Icon(Icons.more_vert,
+                                color: AppColors.textGrey, size: 20),
+                          ),
+                        ]),
+                      ]),
+
+                      if ((data['desc'] ?? '').isNotEmpty) ...[
+                        const SizedBox(height: 10),
+                        Text(data['desc'],
+                            style: const TextStyle(
+                                color: AppColors.textGrey, fontSize: 14),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis),
+                      ],
+
+                      const SizedBox(height: 8),
+                      Row(children: [
+                        const Icon(Icons.access_time,
+                            size: 12, color: AppColors.textGrey),
+                        const SizedBox(width: 4),
+                        Text(timeAgo(data['createdAt'] as Timestamp?),
+                            style: const TextStyle(
+                                fontSize: 11, color: AppColors.textGrey)),
+                        const Spacer(),
+                        const Icon(Icons.arrow_forward_ios,
+                            size: 12, color: AppColors.textGrey),
+                      ]),
                     ]),
-                    if ((data['desc'] ?? '').isNotEmpty) ...[
-                      const SizedBox(height: 10),
-                      Text(data['desc'], style: const TextStyle(color: AppColors.textGrey, fontSize: 14)),
-                    ],
-                    const SizedBox(height: 8),
-                    Text(timeAgo(data['createdAt'] as Timestamp?),
-                        style: const TextStyle(fontSize: 11, color: AppColors.textGrey)),
-                  ]),
+                  ),
                 ),
               );
             },
@@ -1033,7 +1258,231 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
 }
 
 // ═══════════════════════════════════════
-// PROFILE SCREEN
+// PROJECT DETAIL SCREEN — NOUVEAU
+// ✅ Page détail complète
+// ✅ Modifier statut
+// ✅ Modifier titre/desc
+// ═══════════════════════════════════════
+class ProjectDetailScreen extends StatefulWidget {
+  final String projectId;
+  final Map<String, dynamic> data;
+  const ProjectDetailScreen(
+      {super.key, required this.projectId, required this.data});
+  @override
+  State<ProjectDetailScreen> createState() => _ProjectDetailScreenState();
+}
+
+class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
+  late String _status;
+  late TextEditingController _titleCtrl;
+  late TextEditingController _descCtrl;
+  bool _editing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _status   = widget.data['status'] ?? 'En cours';
+    _titleCtrl = TextEditingController(text: widget.data['title'] ?? '');
+    _descCtrl  = TextEditingController(text: widget.data['desc'] ?? '');
+  }
+
+  @override
+  void dispose() {
+    _titleCtrl.dispose();
+    _descCtrl.dispose();
+    super.dispose();
+  }
+
+  Color _statusColor(String s) {
+    switch (s) {
+      case 'En cours': return AppColors.primary;
+      case 'Planifié': return Colors.blue;
+      case 'Terminé':  return Colors.green;
+      case 'Annulé':   return Colors.red;
+      default:         return AppColors.primary;
+    }
+  }
+
+  Future<void> _saveChanges() async {
+    await _db.collection('projects').doc(widget.projectId).update({
+      'title':  _titleCtrl.text.trim(),
+      'desc':   _descCtrl.text.trim(),
+      'status': _status,
+    });
+    setState(() => _editing = false);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Projet mis à jour ✅'),
+          backgroundColor: AppColors.primary,
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isOwner = widget.data['authorId'] ==
+        FirebaseAuth.instance.currentUser?.uid;
+    final color = _statusColor(_status);
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Détail projet'),
+        actions: [
+          if (isOwner)
+            IconButton(
+              icon: Icon(_editing ? Icons.close : Icons.edit),
+              onPressed: () => setState(() => _editing = !_editing),
+            ),
+        ],
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(20),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+
+          // Statut
+          Row(children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+              decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(20)),
+              child: Text(_status,
+                  style: TextStyle(color: color, fontWeight: FontWeight.bold)),
+            ),
+            if (isOwner && _editing) ...[
+              const SizedBox(width: 12),
+              // Changer statut
+              DropdownButton<String>(
+                value: _status,
+                items: ['En cours', 'Planifié', 'Terminé', 'Annulé']
+                    .map((s) => DropdownMenuItem(value: s, child: Text(s)))
+                    .toList(),
+                onChanged: (v) => setState(() => _status = v!),
+              ),
+            ],
+          ]),
+
+          const SizedBox(height: 20),
+
+          // Titre
+          const Text('Titre', style: TextStyle(color: AppColors.textGrey, fontSize: 12)),
+          const SizedBox(height: 4),
+          _editing
+              ? TextField(controller: _titleCtrl,
+                  style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold))
+              : Text(_titleCtrl.text,
+                  style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+
+          const SizedBox(height: 16),
+
+          // Description
+          const Text('Description',
+              style: TextStyle(color: AppColors.textGrey, fontSize: 12)),
+          const SizedBox(height: 4),
+          _editing
+              ? TextField(controller: _descCtrl, maxLines: 5,
+                  decoration: const InputDecoration(
+                      hintText: 'Description du projet'))
+              : Text(_descCtrl.text.isNotEmpty
+                  ? _descCtrl.text
+                  : 'Aucune description',
+                  style: const TextStyle(fontSize: 15, height: 1.5,
+                      color: AppColors.textGrey)),
+
+          const SizedBox(height: 20),
+
+          // Info créateur
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.person, color: AppColors.primary),
+              title: const Text('Créé par'),
+              subtitle: Text(widget.data['createdBy'] ?? 'Membre'),
+              trailing: Text(
+                timeAgo(widget.data['createdAt'] as Timestamp?),
+                style: const TextStyle(fontSize: 12, color: AppColors.textGrey),
+              ),
+            ),
+          ),
+
+          if (_editing) ...[
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              icon: const Icon(Icons.save),
+              label: const Text('Sauvegarder les modifications'),
+              onPressed: _saveChanges,
+            ),
+          ],
+
+          if (!_editing && isOwner) ...[
+            const SizedBox(height: 24),
+            // Boutons statut rapides
+            const Text('Changer le statut :',
+                style: TextStyle(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            Wrap(spacing: 8, children: ['En cours', 'Planifié', 'Terminé', 'Annulé']
+                .map((s) => ActionChip(
+                  label: Text(s),
+                  backgroundColor: _status == s
+                      ? _statusColor(s).withValues(alpha: 0.2)
+                      : null,
+                  labelStyle: TextStyle(
+                      color: _status == s ? _statusColor(s) : null,
+                      fontWeight: _status == s ? FontWeight.bold : null),
+                  onPressed: () async {
+                    setState(() => _status = s);
+                    await _db.collection('projects')
+                        .doc(widget.projectId)
+                        .update({'status': s});
+                  },
+                )).toList()),
+
+            const SizedBox(height: 24),
+
+            // Supprimer
+            OutlinedButton.icon(
+              icon: const Icon(Icons.delete_outline, color: Colors.red),
+              label: const Text('Supprimer ce projet',
+                  style: TextStyle(color: Colors.red)),
+              style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Colors.red),
+                  minimumSize: const Size(double.infinity, 48),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12))),
+              onPressed: () => showDialog(
+                context: context,
+                builder: (_) => AlertDialog(
+                  title: const Text('Supprimer ?'),
+                  content: const Text('Ce projet sera supprimé définitivement.'),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.pop(context),
+                        child: const Text('Annuler')),
+                    TextButton(
+                      onPressed: () {
+                        _db.collection('projects').doc(widget.projectId).delete();
+                        Navigator.pop(context);
+                        Navigator.pop(context);
+                      },
+                      child: const Text('Supprimer',
+                          style: TextStyle(color: Colors.red)),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ]),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════
+// PROFILE SCREEN — CORRIGÉ
+// ✅ Vrai nom depuis Firestore
+// ✅ Photo profil
+// ✅ Bio modifiable
 // ═══════════════════════════════════════
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -1045,7 +1494,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _uploading = false;
 
   Future<void> _changePhoto() async {
-    final picked = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 75);
+    final picked = await _picker.pickImage(
+        source: ImageSource.gallery, imageQuality: 75);
     if (picked == null) return;
     setState(() => _uploading = true);
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -1057,9 +1507,41 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (mounted) setState(() => _uploading = false);
   }
 
+  void _editBio(String currentBio) {
+    final ctrl = TextEditingController(text: currentBio);
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Modifier ma bio'),
+        content: TextField(
+          controller: ctrl,
+          maxLines: 3,
+          maxLength: 150,
+          decoration: const InputDecoration(hintText: 'Parle de toi...'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context),
+              child: const Text('Annuler')),
+          ElevatedButton(
+            onPressed: () async {
+              final uid = FirebaseAuth.instance.currentUser?.uid;
+              if (uid != null) {
+                await _db.collection('users').doc(uid)
+                    .update({'bio': ctrl.text.trim()});
+              }
+              if (mounted) Navigator.pop(context);
+            },
+            child: const Text('Sauvegarder'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
+
     return Scaffold(
       appBar: AppBar(title: const Text('Mon Profil')),
       body: StreamBuilder<DocumentSnapshot>(
@@ -1070,6 +1552,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           final email    = data?['email']    ?? user?.email ?? '';
           final role     = data?['role']     ?? 'membre';
           final photoUrl = data?['photoUrl'] ?? '';
+          final bio      = data?['bio']      ?? '';
 
           return ListView(padding: const EdgeInsets.all(24), children: [
             // Avatar
@@ -1077,56 +1560,115 @@ class _ProfileScreenState extends State<ProfileScreen> {
               CircleAvatar(
                 radius: 56,
                 backgroundColor: AppColors.primary.withValues(alpha: 0.2),
-                backgroundImage: photoUrl.isNotEmpty ? NetworkImage(photoUrl) : null,
-                child: photoUrl.isEmpty ? Text(
-                  name.isNotEmpty ? name[0].toUpperCase() : 'M',
-                  style: const TextStyle(fontSize: 44, color: AppColors.primary, fontWeight: FontWeight.bold),
-                ) : null,
+                backgroundImage:
+                    photoUrl.isNotEmpty ? NetworkImage(photoUrl) : null,
+                child: photoUrl.isEmpty
+                    ? Text(
+                        name.isNotEmpty ? name[0].toUpperCase() : 'M',
+                        style: const TextStyle(
+                            fontSize: 44,
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.bold),
+                      )
+                    : null,
               ),
-              Positioned(right: 0, bottom: 0,
+              Positioned(
+                right: 0, bottom: 0,
                 child: GestureDetector(
                   onTap: _uploading ? null : _changePhoto,
                   child: Container(
                     padding: const EdgeInsets.all(8),
-                    decoration: const BoxDecoration(color: AppColors.primary, shape: BoxShape.circle),
+                    decoration: const BoxDecoration(
+                        color: AppColors.primary, shape: BoxShape.circle),
                     child: _uploading
-                        ? const SizedBox(width: 16, height: 16,
-                            child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                        : const Icon(Icons.camera_alt, color: Colors.white, size: 16),
+                        ? const SizedBox(
+                            width: 16, height: 16,
+                            child: CircularProgressIndicator(
+                                color: Colors.white, strokeWidth: 2))
+                        : const Icon(Icons.camera_alt,
+                            color: Colors.white, size: 16),
                   ),
-                )),
+                ),
+              ),
             ])),
+
             const SizedBox(height: 16),
-            Center(child: Text(name, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold))),
+
+            // Nom
+            Center(child: Text(name,
+                style: const TextStyle(
+                    fontSize: 22, fontWeight: FontWeight.bold))),
             const SizedBox(height: 4),
+
+            // Rôle
             Center(child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-              decoration: BoxDecoration(color: AppColors.primary.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(20)),
-              child: Text(role.toUpperCase(), style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.w600, fontSize: 12)),
+              decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(20)),
+              child: Text(role.toUpperCase(),
+                  style: const TextStyle(
+                      color: AppColors.primary,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12)),
             )),
+
+            const SizedBox(height: 12),
+
+            // Bio
+            GestureDetector(
+              onTap: () => _editBio(bio),
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.05),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppColors.border)),
+                child: Row(children: [
+                  Expanded(child: Text(
+                    bio.isNotEmpty ? bio : 'Ajoute une bio...',
+                    style: TextStyle(
+                        color: bio.isNotEmpty
+                            ? null
+                            : AppColors.textGrey,
+                        fontSize: 14),
+                    textAlign: TextAlign.center,
+                  )),
+                  const Icon(Icons.edit, size: 16, color: AppColors.textGrey),
+                ]),
+              ),
+            ),
+
             const SizedBox(height: 24),
 
             // Stats perso
             Row(children: [
               Expanded(child: _ProfileStat(label: 'Posts',
-                  stream: _db.collection('posts').where('authorId', isEqualTo: user?.uid).snapshots())),
+                  stream: _db.collection('posts')
+                      .where('authorId', isEqualTo: user?.uid).snapshots())),
               const SizedBox(width: 12),
               Expanded(child: _ProfileStat(label: 'Projets',
-                  stream: _db.collection('projects').where('authorId', isEqualTo: user?.uid).snapshots())),
+                  stream: _db.collection('projects')
+                      .where('authorId', isEqualTo: user?.uid).snapshots())),
             ]),
+
             const SizedBox(height: 24),
 
             _InfoTile(icon: Icons.email_outlined, label: 'Email', value: email),
-            _InfoTile(icon: Icons.badge_outlined, label: 'Rôle', value: role),
+            _InfoTile(icon: Icons.badge_outlined,  label: 'Rôle',  value: role),
+
             const SizedBox(height: 32),
 
+            // Déconnexion
             OutlinedButton.icon(
               icon: const Icon(Icons.logout, color: Colors.red),
-              label: const Text('Se déconnecter', style: TextStyle(color: Colors.red)),
+              label: const Text('Se déconnecter',
+                  style: TextStyle(color: Colors.red)),
               style: OutlinedButton.styleFrom(
                 side: const BorderSide(color: Colors.red),
                 minimumSize: const Size(double.infinity, 52),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14)),
               ),
               onPressed: () => AuthService.logout(),
             ),
@@ -1148,7 +1690,10 @@ class _ProfileStat extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         child: Column(children: [
           Text('${snap.data?.docs.length ?? 0}',
-              style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: AppColors.primary)),
+              style: const TextStyle(
+                  fontSize: 26,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.primary)),
           Text(label, style: const TextStyle(color: AppColors.textGrey)),
         ]),
       ),
@@ -1164,8 +1709,10 @@ class _InfoTile extends StatelessWidget {
     margin: const EdgeInsets.only(bottom: 10),
     child: ListTile(
       leading: Icon(icon, color: AppColors.primary),
-      title: Text(label, style: const TextStyle(color: AppColors.textGrey, fontSize: 13)),
-      subtitle: Text(value, style: const TextStyle(fontWeight: FontWeight.w600)),
+      title: Text(label,
+          style: const TextStyle(color: AppColors.textGrey, fontSize: 13)),
+      subtitle: Text(value,
+          style: const TextStyle(fontWeight: FontWeight.w600)),
     ),
   );
 }
@@ -1175,6 +1722,7 @@ class _InfoTile extends StatelessWidget {
 // ═══════════════════════════════════════
 class NotificationsScreen extends StatelessWidget {
   const NotificationsScreen({super.key});
+
   @override
   Widget build(BuildContext context) {
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -1186,12 +1734,14 @@ class NotificationsScreen extends StatelessWidget {
             onPressed: () async {
               final notifs = await _db.collection('notifications')
                   .where('uid', isEqualTo: uid)
-                  .where('read', isEqualTo: false).get();
+                  .where('read', isEqualTo: false)
+                  .get();
               for (final doc in notifs.docs) {
                 await doc.reference.update({'read': true});
               }
             },
-            child: const Text('Tout lire', style: TextStyle(color: Colors.white)),
+            child: const Text('Tout lire',
+                style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
@@ -1207,7 +1757,8 @@ class NotificationsScreen extends StatelessWidget {
             child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
               Icon(Icons.notifications_none, size: 72, color: AppColors.textGrey),
               SizedBox(height: 12),
-              Text('Aucune notification', style: TextStyle(color: AppColors.textGrey)),
+              Text('Aucune notification',
+                  style: TextStyle(color: AppColors.textGrey)),
             ]),
           );
           return ListView.builder(
@@ -1220,19 +1771,31 @@ class NotificationsScreen extends StatelessWidget {
                 margin: const EdgeInsets.only(bottom: 10),
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  color: isNew ? AppColors.primary.withValues(alpha: 0.08) : Theme.of(context).colorScheme.surface,
+                  color: isNew
+                      ? AppColors.primary.withValues(alpha: 0.08)
+                      : Theme.of(context).colorScheme.surface,
                   borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: isNew ? AppColors.primary.withValues(alpha: 0.3) : AppColors.border),
+                  border: Border.all(
+                    color: isNew
+                        ? AppColors.primary.withValues(alpha: 0.3)
+                        : AppColors.border,
+                  ),
                 ),
                 child: Row(children: [
-                  Icon(Icons.notifications, color: isNew ? AppColors.primary : AppColors.textGrey),
+                  Icon(Icons.notifications,
+                      color: isNew ? AppColors.primary : AppColors.textGrey),
                   const SizedBox(width: 12),
                   Expanded(child: Text(data['message'] ?? '',
-                      style: TextStyle(fontWeight: isNew ? FontWeight.bold : FontWeight.normal))),
-                  if (isNew) GestureDetector(
-                    onTap: () => docs[i].reference.update({'read': true}),
-                    child: const Icon(Icons.check_circle_outline, color: AppColors.primary, size: 20),
-                  ),
+                      style: TextStyle(
+                          fontWeight: isNew
+                              ? FontWeight.bold
+                              : FontWeight.normal))),
+                  if (isNew)
+                    GestureDetector(
+                      onTap: () => docs[i].reference.update({'read': true}),
+                      child: const Icon(Icons.check_circle_outline,
+                          color: AppColors.primary, size: 20),
+                    ),
                 ]),
               );
             },
