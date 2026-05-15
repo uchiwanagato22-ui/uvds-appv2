@@ -13,9 +13,9 @@
 // ═══════════════════════════════════════════════════════
 
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../theme/app_theme.dart';
+import '../services/donation_service.dart';
 
 final _db = FirebaseFirestore.instance;
 
@@ -328,6 +328,76 @@ class AdminScreen extends StatelessWidget {
 
         const SizedBox(height: 24),
 
+        const Text('Dons UVDS',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 12),
+        StreamBuilder<QuerySnapshot>(
+          stream: _db
+              .collection('donations')
+              .orderBy('createdAt', descending: true)
+              .limit(20)
+              .snapshots(),
+          builder: (_, snap) {
+            if (!snap.hasData) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            final docs = snap.data!.docs;
+            double total = 0;
+            for (final d in docs) {
+              total += ((d.data() as Map)['amount'] as num?)?.toDouble() ?? 0;
+            }
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.volunteer_activism,
+                        color: AppColors.primary),
+                    title: const Text('Total récent (20 derniers)'),
+                    trailing: Text(
+                      '\$${total.toStringAsFixed(0)}',
+                      style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.primary),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text('Numéro : $uvdsPaymentNumber',
+                    style: const TextStyle(
+                        color: AppColors.textGrey, fontSize: 12)),
+                const SizedBox(height: 8),
+                ...docs.map((doc) {
+                  final data = doc.data() as Map<String, dynamic>;
+                  final method = data['method'] ?? '';
+                  return Card(
+                    margin: const EdgeInsets.only(bottom: 6),
+                    child: ListTile(
+                      dense: true,
+                      title: Text(data['donorName'] ?? 'Anonyme',
+                          style: const TextStyle(fontWeight: FontWeight.w600)),
+                      subtitle: Text(
+                        '${method == 'bankily' ? 'Bankily' : method == 'masrivi' ? 'Masrivi' : method} • ${data['reference'] ?? ''}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      trailing: Text(
+                        '\$${(data['amount'] as num?)?.toStringAsFixed(0) ?? '0'}',
+                        style: const TextStyle(
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  );
+                }),
+              ],
+            );
+          },
+        ),
+
+        const SizedBox(height: 24),
+
         // Gérer membres
         const Text('Gérer les membres',
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
@@ -606,220 +676,7 @@ class _StatusBar extends StatelessWidget {
   }
 }
 
-// ═══════════════════════════════════════
-// 💰 DONATIONS SCREEN
-// ═══════════════════════════════════════
-// Ajoute dans HomeScreen ou ProfileScreen :
-// ElevatedButton.icon(
-//   icon: Icon(Icons.volunteer_activism),
-//   label: Text('Faire un don'),
-//   onPressed: () => Navigator.push(context,
-//     MaterialPageRoute(builder: (_) => const DonationsScreen())),
-// )
-
-class DonationsScreen extends StatefulWidget {
-  const DonationsScreen({super.key});
-  @override
-  State<DonationsScreen> createState() => _DonationsScreenState();
-}
-
-class _DonationsScreenState extends State<DonationsScreen> {
-  double _amount    = 10;
-  String _message   = '';
-  bool   _loading   = false;
-  bool   _success   = false;
-
-  final List<double> _presets = [5, 10, 25, 50, 100];
-
-  Future<void> _donate() async {
-    setState(() => _loading = true);
-    final user = FirebaseAuth.instance.currentUser;
-
-    // Enregistre le don dans Firestore
-    // En production → intègre Stripe ou PayPal ici
-    await _db.collection('donations').add({
-      'amount':    _amount,
-      'message':   _message,
-      'donorName': user?.displayName ?? 'Anonyme',
-      'donorId':   user?.uid,
-      'createdAt': FieldValue.serverTimestamp(),
-      'status':    'pending', // → 'completed' après paiement réel
-    });
-
-    setState(() { _loading = false; _success = true; });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_success) return Scaffold(
-      appBar: AppBar(title: const Text('Don effectué ✅')),
-      body: Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-        Container(
-          width: 100, height: 100,
-          decoration: BoxDecoration(
-            color: AppColors.primary.withValues(alpha: 0.1),
-            shape: BoxShape.circle,
-          ),
-          child: const Icon(Icons.volunteer_activism, size: 52, color: AppColors.primary),
-        ),
-        const SizedBox(height: 24),
-        Text('Merci pour ton don de ${_amount.toStringAsFixed(0)}€ ! 🙏',
-            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-            textAlign: TextAlign.center),
-        const SizedBox(height: 12),
-        const Text('Ton soutien aide UVDS à continuer sa mission.',
-            style: TextStyle(color: AppColors.textGrey),
-            textAlign: TextAlign.center),
-        const SizedBox(height: 32),
-        ElevatedButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Retour'),
-        ),
-      ])),
-    );
-
-    return Scaffold(
-      appBar: AppBar(title: const Text('Faire un don 💚')),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          // Header
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [AppColors.primary, Color(0xFF2E8B57)],
-                begin: Alignment.topLeft, end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: const Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Icon(Icons.volunteer_activism, color: Colors.white, size: 36),
-              SizedBox(height: 12),
-              Text('Soutenir UVDS', style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
-              SizedBox(height: 6),
-              Text('Ton don aide des familles et des communautés.',
-                  style: TextStyle(color: Colors.white70, fontSize: 13)),
-            ]),
-          ),
-
-          const SizedBox(height: 28),
-
-          const Text('Choisir un montant',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 12),
-
-          // Montants prédéfinis
-          Wrap(spacing: 10, runSpacing: 10, children: _presets.map((p) =>
-            GestureDetector(
-              onTap: () => setState(() => _amount = p),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                decoration: BoxDecoration(
-                  color: _amount == p ? AppColors.primary : Colors.transparent,
-                  borderRadius: BorderRadius.circular(30),
-                  border: Border.all(
-                    color: _amount == p ? AppColors.primary : AppColors.border,
-                    width: 2,
-                  ),
-                ),
-                child: Text('${p.toStringAsFixed(0)}€',
-                    style: TextStyle(
-                      color: _amount == p ? Colors.white : AppColors.textDark,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    )),
-              ),
-            ),
-          ).toList()),
-
-          const SizedBox(height: 16),
-
-          // Montant personnalisé
-          TextField(
-            keyboardType: TextInputType.number,
-            decoration: const InputDecoration(
-              hintText: 'Autre montant (€)',
-              prefixIcon: Icon(Icons.euro, color: AppColors.primary),
-            ),
-            onChanged: (v) {
-              final parsed = double.tryParse(v);
-              if (parsed != null) setState(() => _amount = parsed);
-            },
-          ),
-
-          const SizedBox(height: 20),
-
-          const Text('Message (optionnel)',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          TextField(
-            maxLines: 3,
-            decoration: const InputDecoration(hintText: 'Laisse un message d\'encouragement...'),
-            onChanged: (v) => _message = v,
-          ),
-
-          const SizedBox(height: 28),
-
-          // Historique dons
-          const Text('Derniers dons',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 12),
-
-          StreamBuilder<QuerySnapshot>(
-            stream: _db.collection('donations')
-                .orderBy('createdAt', descending: true)
-                .limit(5)
-                .snapshots(),
-            builder: (_, snap) {
-              if (!snap.hasData) return const SizedBox();
-              final docs = snap.data!.docs;
-              if (docs.isEmpty) return const Text('Sois le premier à donner ! 💚',
-                  style: TextStyle(color: AppColors.textGrey));
-              return Column(children: docs.map((doc) {
-                final data = doc.data() as Map<String, dynamic>;
-                return ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: AppColors.primary.withValues(alpha: 0.1),
-                    child: const Icon(Icons.favorite, color: AppColors.primary, size: 18),
-                  ),
-                  title: Text(data['donorName'] ?? 'Anonyme',
-                      style: const TextStyle(fontWeight: FontWeight.w600)),
-                  subtitle: (data['message'] ?? '').isNotEmpty
-                      ? Text(data['message']) : null,
-                  trailing: Text('${data['amount']?.toStringAsFixed(0) ?? '0'}€',
-                      style: const TextStyle(color: AppColors.primary,
-                          fontWeight: FontWeight.bold, fontSize: 16)),
-                );
-              }).toList());
-            },
-          ),
-
-          const SizedBox(height: 28),
-
-          // Bouton don
-          ElevatedButton.icon(
-            icon: const Icon(Icons.volunteer_activism),
-            label: _loading
-                ? const SizedBox(height: 20, width: 20,
-                    child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                : Text('Donner ${_amount.toStringAsFixed(0)}€'),
-            onPressed: _loading ? null : _donate,
-          ),
-
-          const SizedBox(height: 12),
-          const Center(
-            child: Text(
-              '🔒 Paiement sécurisé — Intégrer Stripe pour production',
-              style: TextStyle(fontSize: 11, color: AppColors.textGrey),
-              textAlign: TextAlign.center,
-            ),
-          ),
-        ]),
-      ),
-    );
-  }
-}
+// DonationsScreen → lib/screens/donations_screen.dart
 
 // ═══════════════════════════════════════
 // 🌙 DARK MODE SWITCH

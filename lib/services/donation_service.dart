@@ -1,0 +1,172 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+
+/// Numéro mobile money UVDS (Bankily / Masrivi).
+const String uvdsPaymentNumber = '32652300';
+
+/// Montants de don et avantages associés (USD).
+const List<double> donationTiers = [5, 10, 20, 50];
+
+class DonationTierInfo {
+  final double amount;
+  final String id;
+  final String title;
+  final String perks;
+
+  const DonationTierInfo({
+    required this.amount,
+    required this.id,
+    required this.title,
+    required this.perks,
+  });
+}
+
+const List<DonationTierInfo> donationTierInfos = [
+  DonationTierInfo(
+    amount: 5,
+    id: 'supporter',
+    title: 'Soutien 5\$',
+    perks: 'Badge Supporter sur ton profil',
+  ),
+  DonationTierInfo(
+    amount: 10,
+    id: 'bronze',
+    title: 'Bronze 10\$',
+    perks: 'Badge Bronze + statistiques communauté',
+  ),
+  DonationTierInfo(
+    amount: 20,
+    id: 'silver',
+    title: 'Silver 20\$',
+    perks: 'Annuaire membres + publications mises en avant',
+  ),
+  DonationTierInfo(
+    amount: 50,
+    id: 'gold',
+    title: 'Gold 50\$',
+    perks: 'Accès Panel Admin complet',
+  ),
+];
+
+class DonationService {
+  static final _db = FirebaseFirestore.instance;
+
+  static String tierForTotal(double total) {
+    if (total >= 50) return 'gold';
+    if (total >= 20) return 'silver';
+    if (total >= 10) return 'bronze';
+    if (total >= 5) return 'supporter';
+    return 'none';
+  }
+
+  static String tierLabel(String tier) {
+    switch (tier) {
+      case 'gold':
+        return 'Gold Admin';
+      case 'silver':
+        return 'Silver';
+      case 'bronze':
+        return 'Bronze';
+      case 'supporter':
+        return 'Supporter';
+      default:
+        return 'Membre';
+    }
+  }
+
+  static bool isAdmin(Map<String, dynamic>? user) =>
+      (user?['role'] ?? '') == 'admin';
+
+  static bool canAccessAdmin(Map<String, dynamic>? user) => isAdmin(user);
+
+  static bool canAccessStats(Map<String, dynamic>? user) {
+    final tier = user?['donationTier'] ?? 'none';
+    return isAdmin(user) ||
+        tier == 'bronze' ||
+        tier == 'silver' ||
+        tier == 'gold';
+  }
+
+  static bool canAccessMembers(Map<String, dynamic>? user) {
+    final tier = user?['donationTier'] ?? 'none';
+    return isAdmin(user) || tier == 'silver' || tier == 'gold';
+  }
+
+  static bool canFeaturePosts(Map<String, dynamic>? user) {
+    final tier = user?['donationTier'] ?? 'none';
+    return isAdmin(user) || tier == 'silver' || tier == 'gold';
+  }
+
+  /// Enregistre le don et applique les paliers (cumul des dons confirmés).
+  static Future<({String? error, String tier, bool becameAdmin})> confirmDonation({
+    required double amount,
+    required String method,
+    String? reference,
+    String? message,
+  }) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      return (error: 'Connecte-toi pour faire un don.', tier: 'none', becameAdmin: false);
+    }
+
+    if (!donationTiers.contains(amount)) {
+      return (
+        error: 'Choisis 5, 10, 20 ou 50\$ uniquement.',
+        tier: 'none',
+        becameAdmin: false,
+      );
+    }
+
+    try {
+      final donorName = user.displayName ?? 'Membre';
+      final userRef = _db.collection('users').doc(user.uid);
+      final userSnap = await userRef.get();
+      final userData = userSnap.data() ?? {};
+      final previousTotal =
+          (userData['totalDonated'] as num?)?.toDouble() ?? 0;
+      final newTotal = previousTotal + amount;
+      final newTier = tierForTotal(newTotal);
+
+      await _db.collection('donations').add({
+        'amount': amount,
+        'message': message ?? '',
+        'reference': reference ?? '',
+        'method': method,
+        'donorName': userData['name'] ?? donorName,
+        'donorId': user.uid,
+        'createdAt': FieldValue.serverTimestamp(),
+        'status': 'completed',
+      });
+
+      final updates = <String, dynamic>{
+        'totalDonated': newTotal,
+        'donationTier': newTier,
+        'lastDonationAt': FieldValue.serverTimestamp(),
+      };
+      final becameAdmin = newTier == 'gold';
+      if (becameAdmin) updates['role'] = 'admin';
+
+      await userRef.set(updates, SetOptions(merge: true));
+
+      return (error: null, tier: newTier, becameAdmin: becameAdmin);
+    } catch (e) {
+      return (
+        error: 'Erreur lors de l\'enregistrement : $e',
+        tier: 'none',
+        becameAdmin: false,
+      );
+    }
+  }
+
+  static Future<double> totalDonationsAllTime() async {
+    final snap = await _db
+        .collection('donations')
+        .where('status', isEqualTo: 'completed')
+        .get();
+    double total = 0;
+    for (final doc in snap.docs) {
+      total += (doc.data()['amount'] as num?)?.toDouble() ?? 0;
+    }
+    return total;
+  }
+}

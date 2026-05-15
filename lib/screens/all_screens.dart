@@ -17,6 +17,9 @@ import 'package:image_picker/image_picker.dart';
 import 'package:share_plus/share_plus.dart';
 import '../theme/app_theme.dart';
 import '../services/auth_service.dart';
+import '../services/donation_service.dart';
+import 'donations_screen.dart';
+import 'phase2_screens.dart';
 
 final _db      = FirebaseFirestore.instance;
 final _storage = FirebaseStorage.instance;
@@ -51,8 +54,8 @@ Future<String> getRealName() async {
   if (uid == null) return 'Membre';
   try {
     final doc = await _db.collection('users').doc(uid).get();
-    return (doc.data() as Map<String, dynamic>?)?['name'] ?? 
-           FirebaseAuth.instance.currentUser?.displayName ?? 
+    return doc.data()?['name'] ??
+           FirebaseAuth.instance.currentUser?.displayName ??
            'Membre';
   } catch (_) {
     return FirebaseAuth.instance.currentUser?.displayName ?? 'Membre';
@@ -144,6 +147,51 @@ class HomeScreen extends StatelessWidget {
                 ]),
               ]),
             );
+          },
+        ),
+
+        const SizedBox(height: 20),
+
+        StreamBuilder<DocumentSnapshot>(
+          stream: _db.collection('users').doc(uid).snapshots(),
+          builder: (_, userSnap) {
+            final userData =
+                userSnap.data?.data() as Map<String, dynamic>?;
+            final isAdmin = DonationService.canAccessAdmin(userData);
+            return Row(children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    minimumSize: const Size(0, 48),
+                  ),
+                  icon: const Icon(Icons.volunteer_activism, size: 20),
+                  label: const Text('Faire un don'),
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const DonationsScreen()),
+                  ),
+                ),
+              ),
+              if (isAdmin) ...[
+                const SizedBox(width: 10),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.orange,
+                      minimumSize: const Size(0, 48),
+                    ),
+                    icon: const Icon(Icons.admin_panel_settings, size: 20),
+                    label: const Text('Admin'),
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const AdminScreen()),
+                    ),
+                  ),
+                ),
+              ],
+            ]);
           },
         ),
 
@@ -1007,11 +1055,14 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
   final _titleCtrl = TextEditingController();
   final _descCtrl  = TextEditingController();
   String _status   = 'En cours';
+  File? _projectImage;
+  bool _uploadingProject = false;
 
   void _showAdd() {
     _titleCtrl.clear();
     _descCtrl.clear();
     _status = 'En cours';
+    _projectImage = null;
 
     showModalBottomSheet(
       context: context,
@@ -1050,22 +1101,53 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
                   .map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
               onChanged: (v) => setModal(() => _status = v!),
             ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: () async {
+                final picked = await _picker.pickImage(
+                    source: ImageSource.gallery, imageQuality: 75);
+                if (picked != null) {
+                  setModal(() => _projectImage = File(picked.path));
+                }
+              },
+              icon: const Icon(Icons.photo_library, color: AppColors.primary),
+              label: Text(_projectImage == null
+                  ? 'Ajouter une photo'
+                  : 'Photo sélectionnée ✓'),
+            ),
             const SizedBox(height: 16),
             ElevatedButton(
-              onPressed: () async {
+              onPressed: _uploadingProject ? null : () async {
                 if (_titleCtrl.text.trim().isEmpty) return;
+                setModal(() => _uploadingProject = true);
                 final realName = await getRealName();
+                String imageUrl = '';
+                if (_projectImage != null) {
+                  final fileName =
+                      '${DateTime.now().millisecondsSinceEpoch}.jpg';
+                  imageUrl = await uploadImage(
+                          _projectImage!, 'projects/$fileName') ??
+                      '';
+                }
                 await _db.collection('projects').add({
                   'title':     _titleCtrl.text.trim(),
                   'desc':      _descCtrl.text.trim(),
                   'status':    _status,
-                  'createdBy': realName, // ← vrai nom
+                  'imageUrl':  imageUrl,
+                  'createdBy': realName,
                   'authorId':  FirebaseAuth.instance.currentUser?.uid,
                   'createdAt': FieldValue.serverTimestamp(),
                 });
                 if (mounted) Navigator.pop(context);
+                setState(() => _uploadingProject = false);
               },
-              child: const Text('Créer le projet'),
+              child: _uploadingProject
+                  ? const SizedBox(
+                      height: 22,
+                      width: 22,
+                      child: CircularProgressIndicator(
+                          color: Colors.white, strokeWidth: 2))
+                  : const Text('Créer le projet'),
             ),
             const SizedBox(height: 16),
           ]),
@@ -1127,6 +1209,7 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
               final color   = _statusColor(status);
               final icon    = _statusIcon(status);
               final isOwner = data['authorId'] == FirebaseAuth.instance.currentUser?.uid;
+              final imageUrl = (data['imageUrl'] ?? '').toString().trim();
 
               return GestureDetector(
                 // ← Ouvre la page détail au clic
@@ -1223,6 +1306,20 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
                           ),
                         ]),
                       ]),
+
+                      if (imageUrl.isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: Image.network(
+                            imageUrl,
+                            height: 160,
+                            width: double.infinity,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => const SizedBox(),
+                          ),
+                        ),
+                      ],
 
                       if ((data['desc'] ?? '').isNotEmpty) ...[
                         const SizedBox(height: 10),
@@ -1325,6 +1422,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     final isOwner = widget.data['authorId'] ==
         FirebaseAuth.instance.currentUser?.uid;
     final color = _statusColor(_status);
+    final imageUrl = (widget.data['imageUrl'] ?? '').toString().trim();
 
     return Scaffold(
       appBar: AppBar(
@@ -1340,6 +1438,19 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+
+          if (imageUrl.isNotEmpty) ...[
+            ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: Image.network(
+                imageUrl,
+                height: 200,
+                width: double.infinity,
+                fit: BoxFit.cover,
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
 
           // Statut
           Row(children: [
@@ -1507,11 +1618,67 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (mounted) setState(() => _uploading = false);
   }
 
+  Future<void> _saveUserField(Map<String, dynamic> fields) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    await _db.collection('users').doc(uid).set(fields, SetOptions(merge: true));
+  }
+
+  void _editName(String currentName) {
+    final ctrl = TextEditingController(text: currentName);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Modifier mon nom'),
+        content: TextField(
+          controller: ctrl,
+          textCapitalization: TextCapitalization.words,
+          decoration: const InputDecoration(hintText: 'Ton nom complet'),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Annuler')),
+          ElevatedButton(
+            onPressed: () async {
+              final name = ctrl.text.trim();
+              if (name.length < 2) return;
+              try {
+                await FirebaseAuth.instance.currentUser
+                    ?.updateDisplayName(name);
+                await _saveUserField({'name': name});
+                if (ctx.mounted) Navigator.pop(ctx);
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Nom mis à jour ✅'),
+                      backgroundColor: AppColors.primary,
+                    ),
+                  );
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Erreur : $e'),
+                      backgroundColor: AppColors.error,
+                    ),
+                  );
+                }
+              }
+            },
+            child: const Text('Sauvegarder'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _editBio(String currentBio) {
     final ctrl = TextEditingController(text: currentBio);
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (ctx) => AlertDialog(
         title: const Text('Modifier ma bio'),
         content: TextField(
           controller: ctrl,
@@ -1520,16 +1687,32 @@ class _ProfileScreenState extends State<ProfileScreen> {
           decoration: const InputDecoration(hintText: 'Parle de toi...'),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
               child: const Text('Annuler')),
           ElevatedButton(
             onPressed: () async {
-              final uid = FirebaseAuth.instance.currentUser?.uid;
-              if (uid != null) {
-                await _db.collection('users').doc(uid)
-                    .update({'bio': ctrl.text.trim()});
+              try {
+                await _saveUserField({'bio': ctrl.text.trim()});
+                if (ctx.mounted) Navigator.pop(ctx);
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Bio enregistrée ✅'),
+                      backgroundColor: AppColors.primary,
+                    ),
+                  );
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Erreur : $e'),
+                      backgroundColor: AppColors.error,
+                    ),
+                  );
+                }
               }
-              if (mounted) Navigator.pop(context);
             },
             child: const Text('Sauvegarder'),
           ),
@@ -1551,8 +1734,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
           final name     = data?['name']     ?? user?.displayName ?? 'Membre';
           final email    = data?['email']    ?? user?.email ?? '';
           final role     = data?['role']     ?? 'membre';
+          final tier     = data?['donationTier'] ?? 'none';
+          final totalDon = (data?['totalDonated'] as num?)?.toDouble() ?? 0;
           final photoUrl = data?['photoUrl'] ?? '';
           final bio      = data?['bio']      ?? '';
+          final isAdmin  = DonationService.canAccessAdmin(data);
 
           return ListView(padding: const EdgeInsets.all(24), children: [
             // Avatar
@@ -1594,24 +1780,73 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
             const SizedBox(height: 16),
 
-            // Nom
-            Center(child: Text(name,
-                style: const TextStyle(
-                    fontSize: 22, fontWeight: FontWeight.bold))),
+            // Nom (modifiable)
+            Center(
+              child: InkWell(
+                onTap: () => _editName(name),
+                borderRadius: BorderRadius.circular(8),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(name,
+                          style: const TextStyle(
+                              fontSize: 22, fontWeight: FontWeight.bold)),
+                      const SizedBox(width: 6),
+                      const Icon(Icons.edit, size: 16, color: AppColors.textGrey),
+                    ],
+                  ),
+                ),
+              ),
+            ),
             const SizedBox(height: 4),
 
-            // Rôle
-            Center(child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-              decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(20)),
-              child: Text(role.toUpperCase(),
-                  style: const TextStyle(
-                      color: AppColors.primary,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 12)),
+            // Rôle + palier don
+            Center(child: Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              alignment: WrapAlignment.center,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 14, vertical: 4),
+                  decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(20)),
+                  child: Text(role.toUpperCase(),
+                      style: const TextStyle(
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12)),
+                ),
+                if (tier != 'none')
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 4),
+                    decoration: BoxDecoration(
+                        color: Colors.amber.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(20)),
+                    child: Text(
+                        DonationService.tierLabel(tier).toUpperCase(),
+                        style: const TextStyle(
+                            color: Colors.amber,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 12)),
+                  ),
+              ],
             )),
+            if (totalDon > 0)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Center(
+                  child: Text(
+                    'Total dons : \$${totalDon.toStringAsFixed(0)}',
+                    style: const TextStyle(
+                        color: AppColors.textGrey, fontSize: 12),
+                  ),
+                ),
+              ),
 
             const SizedBox(height: 12),
 
@@ -1656,6 +1891,40 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
             _InfoTile(icon: Icons.email_outlined, label: 'Email', value: email),
             _InfoTile(icon: Icons.badge_outlined,  label: 'Rôle',  value: role),
+
+            const SizedBox(height: 16),
+
+            ElevatedButton.icon(
+              icon: const Icon(Icons.volunteer_activism),
+              label: const Text('Faire un don — Bankily / Masrivi'),
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const DonationsScreen()),
+              ),
+            ),
+
+            if (isAdmin) ...[
+              const SizedBox(height: 10),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+                icon: const Icon(Icons.admin_panel_settings),
+                label: const Text('Panel Admin'),
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const AdminScreen()),
+                ),
+              ),
+            ] else if (DonationService.canAccessStats(data)) ...[
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.bar_chart, color: AppColors.primary),
+                label: const Text('Statistiques communauté'),
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const StatsScreen()),
+                ),
+              ),
+            ],
 
             const SizedBox(height: 32),
 

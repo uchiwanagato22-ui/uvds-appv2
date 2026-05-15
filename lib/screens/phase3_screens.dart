@@ -16,15 +16,6 @@ import '../theme/app_theme.dart';
 
 final _db = FirebaseFirestore.instance;
 
-String _timeAgo(Timestamp? ts) {
-  if (ts == null) return '...';
-  final diff = DateTime.now().difference(ts.toDate());
-  if (diff.inSeconds < 60)  return 'À l\'instant';
-  if (diff.inMinutes < 60)  return 'Il y a ${diff.inMinutes} min';
-  if (diff.inHours < 24)    return 'Il y a ${diff.inHours}h';
-  return 'Il y a ${diff.inDays} jour(s)';
-}
-
 // ═══════════════════════════════════════
 // 💬 MESSAGES PRIVÉS
 // ═══════════════════════════════════════

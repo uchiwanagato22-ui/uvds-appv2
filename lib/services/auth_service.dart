@@ -25,9 +25,11 @@ class AuthService {
         'email':     email,
         'role':      'membre',
         'photoUrl':  '',
-        'bio':       '',
-        'online':    true,
-        'createdAt': FieldValue.serverTimestamp(),
+        'bio':          '',
+        'totalDonated': 0,
+        'donationTier': 'none',
+        'online':       true,
+        'createdAt':    FieldValue.serverTimestamp(),
       });
       return null; // succès
     } on FirebaseAuthException catch (e) {
