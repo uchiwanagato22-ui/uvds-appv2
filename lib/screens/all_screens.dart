@@ -9,30 +9,46 @@
 // ═══════════════════════════════════════════════════════
 
 import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:http/http.dart' as http;
 import '../theme/app_theme.dart';
 import '../services/auth_service.dart';
-import '../services/donation_service.dart';
-import 'donations_screen.dart';
 import 'phase2_screens.dart';
 
-final _db      = FirebaseFirestore.instance;
-final _storage = FirebaseStorage.instance;
-final _picker  = ImagePicker();
+final _db     = FirebaseFirestore.instance;
+final _picker = ImagePicker();
 
-// ─── Helper upload image ───────────────
+// ─── Cloudinary Config ────────────────
+const String _cloudName    = 'dr1rbdtph';
+const String _uploadPreset = 'uvds_preset';
+
+// ─── Helper upload image Cloudinary ───
 Future<String?> uploadImage(File file, String path) async {
   try {
-    final ref = _storage.ref().child(path);
-    await ref.putFile(file);
-    return await ref.getDownloadURL();
+    final url = Uri.parse(
+      'https://api.cloudinary.com/v1_1/$_cloudName/image/upload',
+    );
+    final request = http.MultipartRequest('POST', url);
+    request.fields['upload_preset'] = _uploadPreset;
+    request.files.add(
+      await http.MultipartFile.fromPath('file', file.path),
+    );
+    final response = await request.send();
+    final body     = await response.stream.bytesToString();
+    if (response.statusCode == 200) {
+      final data = jsonDecode(body);
+      return data['secure_url'] as String?;
+    }
+    debugPrint('Cloudinary error: \$body');
+    return null;
   } catch (e) {
-    debugPrint('Upload error: $e');
+    debugPrint('Upload error: \$e');
     return null;
   }
 }
@@ -157,7 +173,7 @@ class HomeScreen extends StatelessWidget {
           builder: (_, userSnap) {
             final userData =
                 userSnap.data?.data() as Map<String, dynamic>?;
-            final isAdmin = DonationService.canAccessAdmin(userData);
+            final isAdmin = (userData?['role'] ?? '') == 'admin';
             return Row(children: [
               Expanded(
                 child: ElevatedButton.icon(
