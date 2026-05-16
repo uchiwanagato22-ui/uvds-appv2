@@ -8,6 +8,7 @@
 // ✅ Profil réel
 // ═══════════════════════════════════════════════════════
 
+import 'donations_screen.dart';
 import 'dart:io';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
