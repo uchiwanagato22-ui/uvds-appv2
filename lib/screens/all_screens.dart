@@ -10,25 +10,25 @@
 
 import 'dart:io';
 import 'dart:convert';
-import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:flutter/services.dart';
+import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:http/http.dart' as http;
 import '../theme/app_theme.dart';
 import '../services/auth_service.dart';
 import 'phase2_screens.dart';
 
-final _db     = FirebaseFirestore.instance;
-final _picker = ImagePicker();
+final _db      = FirebaseFirestore.instance;
+final _picker  = ImagePicker();
 
-// ─── Cloudinary Config ────────────────
+// ─── Helper upload image ───────────────
+// Cloudinary config
 const String _cloudName    = 'dr1rbdtph';
 const String _uploadPreset = 'uvds_preset';
 
-// ─── Helper upload image Cloudinary ───
 Future<String?> uploadImage(File file, String path) async {
   try {
     final url = Uri.parse(
@@ -36,19 +36,15 @@ Future<String?> uploadImage(File file, String path) async {
     );
     final request = http.MultipartRequest('POST', url);
     request.fields['upload_preset'] = _uploadPreset;
-    request.files.add(
-      await http.MultipartFile.fromPath('file', file.path),
-    );
+    request.files.add(await http.MultipartFile.fromPath('file', file.path));
     final response = await request.send();
-    final body     = await response.stream.bytesToString();
+    final body = await response.stream.bytesToString();
     if (response.statusCode == 200) {
-      final data = jsonDecode(body);
-      return data['secure_url'] as String?;
+      return jsonDecode(body)['secure_url'] as String?;
     }
-    debugPrint('Cloudinary error: \$body');
     return null;
   } catch (e) {
-    debugPrint('Upload error: \$e');
+    debugPrint('Upload error: $e');
     return null;
   }
 }
@@ -1754,7 +1750,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           final totalDon = (data?['totalDonated'] as num?)?.toDouble() ?? 0;
           final photoUrl = data?['photoUrl'] ?? '';
           final bio      = data?['bio']      ?? '';
-          final isAdmin  = DonationService.canAccessAdmin(data);
+          final isAdmin  = (data?['role'] ?? '') == 'admin';
 
           return ListView(padding: const EdgeInsets.all(24), children: [
             // Avatar
@@ -1844,7 +1840,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         color: Colors.amber.withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(20)),
                     child: Text(
-                        DonationService.tierLabel(tier).toUpperCase(),
+                        tier.toString().toUpperCase(),
                         style: const TextStyle(
                             color: Colors.amber,
                             fontWeight: FontWeight.w600,
@@ -1930,7 +1926,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   MaterialPageRoute(builder: (_) => const AdminScreen()),
                 ),
               ),
-            ] else if (DonationService.canAccessStats(data)) ...[
+            ] else if ((data?['role'] ?? '') == 'silver' || (data?['role'] ?? '') == 'gold') ...[
               const SizedBox(height: 10),
               OutlinedButton.icon(
                 icon: const Icon(Icons.bar_chart, color: AppColors.primary),
