@@ -517,11 +517,26 @@ class _DonationsTabState extends State<_DonationsTab> {
                                 style: const TextStyle(color: AppColors.textGrey, fontSize: 12)),
                           ],
                         )),
-                        Text("\$${data["amount"]}",
-                            style: const TextStyle(
-                                color: AppColors.primary,
-                                fontWeight: FontWeight.w900,
-                                fontSize: 22)),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(
+                              data["amountMru"] != null
+                                  ? '${formatMru((data["amountMru"] as num).toInt())} MRU'
+                                  : mruPaymentLabel(
+                                      (data["amount"] as num?) ?? 0),
+                              style: const TextStyle(
+                                  color: AppColors.primary,
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 20),
+                            ),
+                            Text(
+                              usdWithMru((data["amount"] as num?) ?? 0),
+                              style: const TextStyle(
+                                  color: AppColors.textGrey, fontSize: 11),
+                            ),
+                          ],
+                        ),
                       ]),
 
                       if ((data["reference"] ?? "").isNotEmpty) ...[

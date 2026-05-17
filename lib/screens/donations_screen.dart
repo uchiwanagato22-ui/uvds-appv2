@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../theme/app_theme.dart';
+import '../services/donation_service.dart';
 
 final _db = FirebaseFirestore.instance;
 
@@ -108,6 +109,7 @@ class _DonationsScreenState extends State<DonationsScreen> {
         'donorId':       user.uid,
         'donorName':     realName,
         'amount':        tier['amount'],
+        'amountMru':     mruFromUsd(tier['amount'] as num),
         'tier':          tier['name'],
         'badge':         tier['badge'],
         'paymentMethod': _paymentMethod,
@@ -132,7 +134,7 @@ class _DonationsScreenState extends State<DonationsScreen> {
         await _db.collection('notifications').add({
           'uid':     admin.id,
           'message': '💰 $realName a fait un don ${tier['badge']} '
-              'de \$${tier['amount']} via $_paymentMethod — Ref: ${_refCtrl.text.trim()}',
+              'de ${usdWithMru(tier['amount'] as num)} via $_paymentMethod — Ref: ${_refCtrl.text.trim()}',
           'read':    false,
           'time':    FieldValue.serverTimestamp(),
         });
@@ -168,7 +170,7 @@ class _DonationsScreenState extends State<DonationsScreen> {
               Text(tier['badge'] as String,
                   style: const TextStyle(fontSize: 80)),
               const SizedBox(height: 20),
-              Text('Merci pour ton don de \$${tier['amount']} ! 🙏',
+              Text('Merci pour ton don de ${usdWithMru(tier['amount'] as num)} ! 🙏',
                   style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
                   textAlign: TextAlign.center),
               const SizedBox(height: 12),
@@ -220,6 +222,14 @@ class _DonationsScreenState extends State<DonationsScreen> {
           // ── Paliers ─────────────────
           const Text('Choisis ton palier',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 6),
+          Text(
+            'Paiement Bankily/Masrivi en MRU — taux indicatif : 1 USD ≈ ${usdToMruRate.toInt()} MRU',
+            style: TextStyle(
+              fontSize: 12,
+              color: AppColors.textGrey.withValues(alpha: 0.9),
+            ),
+          ),
           const SizedBox(height: 12),
 
           ..._tiers.asMap().entries.map((entry) {
@@ -253,19 +263,33 @@ class _DonationsScreenState extends State<DonationsScreen> {
                   Expanded(child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('${t['badge']} ${t['name']} \$${t['amount']}',
+                      Text('${t['badge']} ${t['name']}',
                           style: const TextStyle(
                               fontWeight: FontWeight.bold, fontSize: 16)),
+                      Text(usdWithMru(t['amount'] as num),
+                          style: const TextStyle(
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14)),
                       Text(t['desc'] as String,
                           style: const TextStyle(
                               color: AppColors.textGrey, fontSize: 13)),
                     ],
                   )),
-                  Text('\$${t['amount']}',
-                      style: const TextStyle(
-                          color: AppColors.primary,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 18)),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(mruPaymentLabel(t['amount'] as num),
+                          style: const TextStyle(
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 17)),
+                      Text('\$${t['amount']}',
+                          style: const TextStyle(
+                              color: AppColors.textGrey,
+                              fontSize: 12)),
+                    ],
+                  ),
                 ]),
               ),
             );
@@ -327,9 +351,20 @@ class _DonationsScreenState extends State<DonationsScreen> {
               borderRadius: BorderRadius.circular(16),
             ),
             child: Column(children: [
-              Text('Envoie le montant à ce numéro',
+              Text('Envoie ce montant à ce numéro',
                   style: TextStyle(color: Colors.white.withValues(alpha: 0.8))),
               const SizedBox(height: 10),
+              Text(mruPaymentLabel(tier['amount'] as num),
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 36,
+                      fontWeight: FontWeight.w900)),
+              const SizedBox(height: 4),
+              Text(usdWithMru(tier['amount'] as num),
+                  style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.85),
+                      fontSize: 14)),
+              const SizedBox(height: 12),
               Text(_currentNumber,
                   style: const TextStyle(
                       color: Colors.white,
@@ -340,26 +375,58 @@ class _DonationsScreenState extends State<DonationsScreen> {
               Text('via $_paymentMethod',
                   style: TextStyle(color: Colors.white.withValues(alpha: 0.7))),
               const SizedBox(height: 14),
-              OutlinedButton.icon(
-                icon: const Icon(Icons.copy, color: Colors.white, size: 16),
-                label: const Text('Copier le numéro',
-                    style: TextStyle(color: Colors.white)),
-                style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: Colors.white),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(30)),
-                ),
-                onPressed: () {
-                  Clipboard.setData(ClipboardData(text: _currentNumber));
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Numéro copié ! 📋'),
-                      backgroundColor: AppColors.primary,
-                      duration: Duration(seconds: 1),
+              Row(children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.copy, color: Colors.white, size: 16),
+                    label: const Text('Numéro',
+                        style: TextStyle(color: Colors.white, fontSize: 13)),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Colors.white),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(30)),
                     ),
-                  );
-                },
-              ),
+                    onPressed: () {
+                      Clipboard.setData(ClipboardData(text: _currentNumber));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Numéro copié ! 📋'),
+                          backgroundColor: AppColors.primary,
+                          duration: Duration(seconds: 1),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.payments, color: Colors.white, size: 16),
+                    label: Text(
+                      mruPaymentLabel(tier['amount'] as num),
+                      style: const TextStyle(color: Colors.white, fontSize: 12),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Colors.white),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(30)),
+                    ),
+                    onPressed: () {
+                      final mru = mruFromUsd(tier['amount'] as num);
+                      Clipboard.setData(ClipboardData(text: '$mru'));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                              'Montant ${mruPaymentLabel(tier['amount'] as num)} copié ! 📋'),
+                          backgroundColor: AppColors.primary,
+                          duration: const Duration(seconds: 1),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ]),
             ]),
           ),
 
@@ -369,7 +436,7 @@ class _DonationsScreenState extends State<DonationsScreen> {
           TextField(
             controller: _refCtrl,
             decoration: const InputDecoration(
-              hintText: 'Référence de transaction (optionnel)',
+              hintText: 'Référence de transaction Bankily/Masrivi',
               prefixIcon: Icon(Icons.receipt_outlined),
             ),
           ),
@@ -415,11 +482,14 @@ class _DonationsScreenState extends State<DonationsScreen> {
                     title: Text(d['donorName'] ?? 'Anonyme',
                         style: const TextStyle(fontWeight: FontWeight.w600)),
                     subtitle: Text(d['paymentMethod'] ?? ''),
-                    trailing: Text('\$${d['amount']}',
+                    trailing: Text(
+                        d['amountMru'] != null
+                            ? '${formatMru((d['amountMru'] as num).toInt())} MRU'
+                            : usdWithMru((d['amount'] as num?) ?? 0),
                         style: const TextStyle(
                             color: AppColors.primary,
                             fontWeight: FontWeight.bold,
-                            fontSize: 16)),
+                            fontSize: 14)),
                   );
                 }).toList(),
               );
@@ -440,17 +510,17 @@ class _DonationsScreenState extends State<DonationsScreen> {
                   : const Icon(Icons.check_circle_outline),
               label: Text(_loading
                   ? 'Confirmation en cours...'
-                  : 'J\'ai payé — confirmer \$${tier['amount']}'),
+                  : 'J\'ai payé — ${mruPaymentLabel(tier['amount'] as num)}'),
               // ← BOUTON CORRIGÉ — appelle _confirmPayment
               onPressed: _loading ? null : _confirmPayment,
             ),
           ),
 
           const SizedBox(height: 8),
-          const Center(
+          Center(
             child: Text(
-              'Vérifie que le montant envoyé correspond au palier choisi.',
-              style: TextStyle(fontSize: 11, color: AppColors.textGrey),
+              'Envoie exactement ${mruPaymentLabel(tier['amount'] as num)} (${usdWithMru(tier['amount'] as num)}) sur Bankily ou Masrivi.',
+              style: const TextStyle(fontSize: 11, color: AppColors.textGrey),
               textAlign: TextAlign.center,
             ),
           ),

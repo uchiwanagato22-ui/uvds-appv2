@@ -4,8 +4,34 @@ import 'package:firebase_auth/firebase_auth.dart';
 /// Numéro mobile money UVDS (Bankily / Masrivi).
 const String uvdsPaymentNumber = '32652300';
 
+/// Taux indicatif affiché (1 USD ≈ X MRU). Ajuster selon le marché.
+const double usdToMruRate = 40.0;
+
 /// Montants de don et avantages associés (USD).
 const List<double> donationTiers = [5, 10, 20, 50];
+
+int mruFromUsd(num usd) => (usd * usdToMruRate).round();
+
+String formatMru(int mru) {
+  final s = mru.toString();
+  if (s.length <= 3) return s;
+  final buf = StringBuffer();
+  for (var i = 0; i < s.length; i++) {
+    if (i > 0 && (s.length - i) % 3 == 0) buf.write(' ');
+    buf.write(s[i]);
+  }
+  return buf.toString();
+}
+
+String usdWithMru(num usd) {
+  final usdStr = usd is int || usd == usd.roundToDouble()
+      ? '${usd.toInt()}'
+      : usd.toStringAsFixed(2);
+  return '\$$usdStr ≈ ${formatMru(mruFromUsd(usd))} MRU';
+}
+
+String mruPaymentLabel(num usd) =>
+    '${formatMru(mruFromUsd(usd))} MRU';
 
 class DonationTierInfo {
   final double amount;
@@ -13,7 +39,7 @@ class DonationTierInfo {
   final String title;
   final String perks;
 
-  const DonationTierInfo({
+  DonationTierInfo({
     required this.amount,
     required this.id,
     required this.title,
@@ -21,29 +47,29 @@ class DonationTierInfo {
   });
 }
 
-const List<DonationTierInfo> donationTierInfos = [
+final List<DonationTierInfo> donationTierInfos = [
   DonationTierInfo(
     amount: 5,
     id: 'supporter',
-    title: 'Soutien 5\$',
+    title: 'Soutien — ${usdWithMru(5)}',
     perks: 'Badge Supporter sur ton profil',
   ),
   DonationTierInfo(
     amount: 10,
     id: 'bronze',
-    title: 'Bronze 10\$',
+    title: 'Bronze — ${usdWithMru(10)}',
     perks: 'Badge Bronze + statistiques communauté',
   ),
   DonationTierInfo(
     amount: 20,
     id: 'silver',
-    title: 'Silver 20\$',
+    title: 'Silver — ${usdWithMru(20)}',
     perks: 'Annuaire membres + publications mises en avant',
   ),
   DonationTierInfo(
     amount: 50,
     id: 'gold',
-    title: 'Gold 50\$',
+    title: 'Gold — ${usdWithMru(50)}',
     perks: 'Accès Panel Admin complet',
   ),
 ];
