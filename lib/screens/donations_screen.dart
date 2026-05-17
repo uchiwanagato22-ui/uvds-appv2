@@ -1,104 +1,10 @@
-// ═══════════════════════════════════════════════════════
-// UVDS V2 — DONATIONS + CLOUDINARY FIXES
-// Ce fichier contient :
-// 1. DonationsScreen COMPLET et CORRIGÉ
-// 2. Fonction uploadToCloudinary (remplace Firebase Storage)
-// 3. Instructions pour modifier all_screens.dart
-// ═══════════════════════════════════════════════════════
-
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// ÉTAPE 1 : Dans pubspec.yaml ajoute :
-// http: ^1.2.0
-// crypto: ^3.0.3
-// flutter_clipboard_manager: ^1.0.0
-// OU utilise juste :
-// http: ^1.2.0
-// (le clipboard est déjà dans Flutter)
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// ÉTAPE 2 : Configuration Cloudinary
-//
-// 1. Va sur cloudinary.com → Sign up free
-// 2. Dashboard → copie :
-//    - Cloud name (ex: "uvds-app")
-//    - API Key
-//    - API Secret
-// 3. Settings → Upload → Add upload preset
-//    - Preset name: "uvds_preset"
-//    - Signing Mode: "Unsigned"
-//    - Sauvegarde
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// ÉTAPE 3 : Dans all_screens.dart
-// Remplace la fonction uploadImage() par celle-ci :
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-/*
-import 'dart:convert';
-import 'package:http/http.dart' as http;
-
-// ⚠️ METS TES VRAIES INFOS ICI
-const String _cloudName    = 'TON_CLOUD_NAME';   // ex: 'uvds-app'
-const String _uploadPreset = 'uvds_preset';       // preset créé sur Cloudinary
-
-Future<String?> uploadImage(File file, String path) async {
-  try {
-    final url = Uri.parse(
-      'https://api.cloudinary.com/v1_1/$_cloudName/image/upload',
-    );
-
-    final request = http.MultipartRequest('POST', url);
-    request.fields['upload_preset'] = _uploadPreset;
-    request.files.add(
-      await http.MultipartFile.fromPath('file', file.path),
-    );
-
-    final response = await request.send();
-    final body     = await response.stream.bytesToString();
-
-    if (response.statusCode == 200) {
-      final data = jsonDecode(body);
-      return data['secure_url'] as String?;
-    } else {
-      debugPrint('Cloudinary error: $body');
-      return null;
-    }
-  } catch (e) {
-    debugPrint('Upload error: $e');
-    return null;
-  }
-}
-*/
-
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// ÉTAPE 4 : DonationsScreen COMPLET CORRIGÉ
-// Remplace complètement DonationsScreen dans phase2_screens.dart
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-// Copie ce code et remplace la classe DonationsScreen :
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../theme/app_theme.dart';
 
-final _db = FirebaseFirestore.instance;
 
-Future<String> getRealName() async {
-  final uid = FirebaseAuth.instance.currentUser?.uid;
-  if (uid == null) return 'Membre';
-  try {
-    final doc  = await _db.collection('users').doc(uid).get();
-    final data = doc.data() as Map<String, dynamic>?;
-    final name = data?['name'] ?? '';
-    if (name.toString().isNotEmpty) return name;
-    return FirebaseAuth.instance.currentUser?.displayName ?? 'Membre';
-  } catch (_) {
-    return FirebaseAuth.instance.currentUser?.displayName ?? 'Membre';
-  }
 }
 
 class DonationsScreen extends StatefulWidget {

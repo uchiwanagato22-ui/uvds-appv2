@@ -21,6 +21,7 @@ import 'package:share_plus/share_plus.dart';
 import '../theme/app_theme.dart';
 import '../services/auth_service.dart';
 import 'phase2_screens.dart';
+import 'admin_screen.dart';
 
 final _db      = FirebaseFirestore.instance;
 final _picker  = ImagePicker();
@@ -182,7 +183,7 @@ class HomeScreen extends StatelessWidget {
                   onPressed: () => Navigator.push(
                     context,
                     MaterialPageRoute(
-                        builder: (_) => const DonationsScreen()),
+                        builder: (_) => DonationsScreen()),
                   ),
                 ),
               ),
@@ -199,7 +200,7 @@ class HomeScreen extends StatelessWidget {
                     onPressed: () => Navigator.push(
                       context,
                       MaterialPageRoute(
-                          builder: (_) => const AdminScreen()),
+                          builder: (_) => AdminScreen()),
                     ),
                   ),
                 ),
@@ -1912,7 +1913,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               label: const Text('Faire un don — Bankily / Masrivi'),
               onPressed: () => Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => const DonationsScreen()),
+                MaterialPageRoute(builder: (_) => DonationsScreen()),
               ),
             ),
 
@@ -1924,7 +1925,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 label: const Text('Panel Admin'),
                 onPressed: () => Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => const AdminScreen()),
+                  MaterialPageRoute(builder: (_) => AdminScreen()),
                 ),
               ),
             ] else if ((data?['role'] ?? '') == 'silver' || (data?['role'] ?? '') == 'gold') ...[
@@ -1934,7 +1935,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 label: const Text('Statistiques communauté'),
                 onPressed: () => Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => const StatsScreen()),
+                  MaterialPageRoute(builder: (_) => StatsScreen()),
                 ),
               ),
             ],
