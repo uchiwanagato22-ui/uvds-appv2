@@ -4,7 +4,19 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../theme/app_theme.dart';
 
+final _db = FirebaseFirestore.instance;
 
+Future<String> getRealName() async {
+  final uid = FirebaseAuth.instance.currentUser?.uid;
+  if (uid == null) return 'Membre';
+  try {
+    final doc = await _db.collection('users').doc(uid).get();
+    return doc.data()?['name'] ??
+        FirebaseAuth.instance.currentUser?.displayName ??
+        'Membre';
+  } catch (_) {
+    return FirebaseAuth.instance.currentUser?.displayName ?? 'Membre';
+  }
 }
 
 class DonationsScreen extends StatefulWidget {
@@ -65,16 +77,35 @@ class _DonationsScreenState extends State<DonationsScreen> {
 
   // ── Confirmer le paiement ──────────
   Future<void> _confirmPayment() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Connecte-toi pour faire un don.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+    if (_refCtrl.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Indique la référence de ton paiement Bankily/Masrivi.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
     setState(() => _loading = true);
 
     try {
-      final user     = FirebaseAuth.instance.currentUser;
       final tier     = _tiers[_selectedTier];
       final realName = await getRealName();
 
       // 1. Enregistre dans Firestore
       final donRef = await _db.collection('donations').add({
-        'donorId':       user?.uid ?? '',
+        'donorId':       user.uid,
         'donorName':     realName,
         'amount':        tier['amount'],
         'tier':          tier['name'],
@@ -87,13 +118,11 @@ class _DonationsScreenState extends State<DonationsScreen> {
       });
 
       // 2. Badge en attente sur le profil
-      if (user?.uid != null) {
-        await _db.collection('users').doc(user!.uid).set({
+      await _db.collection('users').doc(user.uid).set({
           'pendingBadge':  tier['badge'],
           'pendingTier':   tier['name'],
           'pendingDonRef': donRef.id,
         }, SetOptions(merge: true));
-      }
 
       // 3. Notifie les admins
       final admins = await _db.collection('users')

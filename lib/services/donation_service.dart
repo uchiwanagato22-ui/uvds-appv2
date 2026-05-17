@@ -77,7 +77,29 @@ class DonationService {
   static bool isAdmin(Map<String, dynamic>? user) =>
       (user?['role'] ?? '') == 'admin';
 
-  static bool canAccessAdmin(Map<String, dynamic>? user) => isAdmin(user);
+  /// Palier affiché (Soutien, Bronze…) → clé Firestore (supporter, bronze…).
+  static String donationTierKeyFromDisplay(String? displayTier) {
+    switch (displayTier) {
+      case 'Gold':
+        return 'gold';
+      case 'Silver':
+        return 'silver';
+      case 'Bronze':
+        return 'bronze';
+      case 'Soutien':
+        return 'supporter';
+      default:
+        return 'none';
+    }
+  }
+
+  static bool hasGoldTier(Map<String, dynamic>? user) {
+    final tier = (user?['tier'] ?? user?['donationTier'] ?? '').toString();
+    return tier == 'Gold' || tier.toLowerCase() == 'gold';
+  }
+
+  static bool canAccessAdmin(Map<String, dynamic>? user) =>
+      isAdmin(user) || hasGoldTier(user);
 
   static bool canAccessStats(Map<String, dynamic>? user) {
     final tier = user?['donationTier'] ?? 'none';

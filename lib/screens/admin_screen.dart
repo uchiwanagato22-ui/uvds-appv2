@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../theme/app_theme.dart';
+import '../services/donation_service.dart';
 
 final _adminDb = FirebaseFirestore.instance;
 
@@ -563,15 +564,33 @@ class _DonationsTabState extends State<_DonationsTab> {
                                     .doc(docs[i].id)
                                     .update({"status": "confirmed"});
                                 // Mettre à jour le profil du donateur
-                                if (data["donorId"] != null) {
-                                  await _adminDb.collection("users")
-                                      .doc(data["donorId"])
-                                      .update({
-                                    "tier": data["tier"],
+                                final donorId = data["donorId"] as String?;
+                                if (donorId != null && donorId.isNotEmpty) {
+                                  final displayTier =
+                                      data["tier"] as String? ?? "";
+                                  final tierKey =
+                                      DonationService.donationTierKeyFromDisplay(
+                                          displayTier);
+                                  final amount =
+                                      (data["amount"] as num?)?.toDouble() ?? 0;
+                                  final updates = <String, dynamic>{
+                                    "tier": displayTier,
                                     "badge": data["badge"],
-                                    // Si Gold → donner accès admin
-                                    if (data["tier"] == "Gold") "role": "admin",
-                                  });
+                                    "donationTier": tierKey,
+                                    "pendingBadge": FieldValue.delete(),
+                                    "pendingTier": FieldValue.delete(),
+                                    "pendingDonRef": FieldValue.delete(),
+                                    "totalDonated": FieldValue.increment(amount),
+                                    "lastDonationAt":
+                                        FieldValue.serverTimestamp(),
+                                  };
+                                  if (displayTier == "Gold") {
+                                    updates["role"] = "admin";
+                                  }
+                                  await _adminDb
+                                      .collection("users")
+                                      .doc(donorId)
+                                      .update(updates);
                                   // Notifier le donateur
                                   await _adminDb.collection("notifications").add({
                                     "uid":     data["donorId"],

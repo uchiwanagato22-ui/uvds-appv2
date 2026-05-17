@@ -15,7 +15,9 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../theme/app_theme.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../services/donation_service.dart';
+import 'phase3_screens.dart';
 
 final _db = FirebaseFirestore.instance;
 
@@ -234,9 +236,29 @@ class MembersScreen extends StatelessWidget {
               final isAdmin  = role == 'admin';
               final isOnline = data['online']   ?? false;
 
+              final memberId = docs[i].id;
+              final myUid = FirebaseAuth.instance.currentUser?.uid;
+
               return Card(
                 margin: const EdgeInsets.only(bottom: 10),
                 child: ListTile(
+                  onTap: myUid == null || myUid == memberId
+                      ? null
+                      : () {
+                          final chatId = myUid.compareTo(memberId) < 0
+                              ? '${myUid}_$memberId'
+                              : '${memberId}_$myUid';
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => PrivateChatScreen(
+                                chatId: chatId,
+                                otherUserId: memberId,
+                                otherUserName: name,
+                              ),
+                            ),
+                          );
+                        },
                   leading: Stack(children: [
                     CircleAvatar(
                       backgroundColor: AppColors.primary.withValues(alpha: 0.2),

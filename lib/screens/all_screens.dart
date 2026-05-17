@@ -20,7 +20,8 @@ import 'package:image_picker/image_picker.dart';
 import 'package:share_plus/share_plus.dart';
 import '../theme/app_theme.dart';
 import '../services/auth_service.dart';
-import 'phase2_screens.dart';
+import '../services/donation_service.dart';
+import 'phase2_screens.dart' hide AdminScreen;
 import 'admin_screen.dart';
 
 final _db      = FirebaseFirestore.instance;
@@ -171,7 +172,7 @@ class HomeScreen extends StatelessWidget {
           builder: (_, userSnap) {
             final userData =
                 userSnap.data?.data() as Map<String, dynamic>?;
-            final isAdmin = (userData?['role'] ?? '') == 'admin';
+            final isAdmin = DonationService.canAccessAdmin(userData);
             return Row(children: [
               Expanded(
                 child: ElevatedButton.icon(
@@ -1752,7 +1753,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           final totalDon = (data?['totalDonated'] as num?)?.toDouble() ?? 0;
           final photoUrl = data?['photoUrl'] ?? '';
           final bio      = data?['bio']      ?? '';
-          final isAdmin  = (data?['role'] ?? '') == 'admin';
+          final isAdmin  = DonationService.canAccessAdmin(data);
 
           return ListView(padding: const EdgeInsets.all(24), children: [
             // Avatar
@@ -1928,7 +1929,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   MaterialPageRoute(builder: (_) => AdminScreen()),
                 ),
               ),
-            ] else if ((data?['role'] ?? '') == 'silver' || (data?['role'] ?? '') == 'gold') ...[
+            ] else if (DonationService.canAccessStats(data)) ...[
               const SizedBox(height: 10),
               OutlinedButton.icon(
                 icon: const Icon(Icons.bar_chart, color: AppColors.primary),

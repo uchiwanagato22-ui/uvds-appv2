@@ -1,11 +1,11 @@
 {
-    "name": "uvds_app",
-    "short_name": "uvds_app",
+    "name": "UVDS",
+    "short_name": "UVDS",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "UVDS - Union pour la Vie et le Développement Social",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
