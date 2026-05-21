@@ -20,7 +20,6 @@ import 'package:image_picker/image_picker.dart';
 import 'package:share_plus/share_plus.dart';
 import '../theme/app_theme.dart';
 import '../services/auth_service.dart';
-import '../services/donation_service.dart';
 import 'phase2_screens.dart' hide AdminScreen;
 import 'admin_screen.dart';
 
@@ -851,14 +850,312 @@ class ChatListScreen extends StatelessWidget {
           trailing: const Icon(Icons.arrow_forward_ios, size: 14, color: AppColors.textGrey),
         ),
         const Divider(height: 1),
-        const Expanded(child: Center(
-          child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-            Icon(Icons.chat_bubble_outline, size: 60, color: AppColors.textGrey),
-            SizedBox(height: 12),
-            Text('Messages privés disponibles bientôt',
-                style: TextStyle(color: AppColors.textGrey)),
-          ]),
+        // Liste conversations privées
+        Expanded(child: StreamBuilder<QuerySnapshot>(
+          stream: _db.collection('users')
+              .orderBy('name')
+              .snapshots(),
+          builder: (_, snap) {
+            if (!snap.hasData) return const Center(child: CircularProgressIndicator());
+            final myUid = FirebaseAuth.instance.currentUser?.uid;
+            final docs  = snap.data!.docs
+                .where((d) => d.id != myUid)
+                .toList();
+            if (docs.isEmpty) return const Center(
+              child: Text('Aucun membre disponible',
+                  style: TextStyle(color: AppColors.textGrey)),
+            );
+            return ListView.builder(
+              itemCount: docs.length,
+              itemBuilder: (_, i) {
+                final data     = docs[i].data() as Map<String, dynamic>;
+                final name     = data['name']     ?? 'Membre';
+                final photoUrl = data['photoUrl'] ?? '';
+                final online   = data['online']   ?? false;
+                final otherId  = docs[i].id;
+                final chatId   = myUid!.compareTo(otherId) < 0
+                    ? '${myUid}_$otherId'
+                    : '${otherId}_$myUid';
+                return ListTile(
+                  onTap: () => Navigator.push(context,
+                      MaterialPageRoute(builder: (_) => PrivateChatScreen(
+                        chatId:        chatId,
+                        otherUserId:   otherId,
+                        otherUserName: name,
+                      ))),
+                  leading: Stack(children: [
+                    CircleAvatar(
+                      backgroundColor: AppColors.primary.withValues(alpha: 0.2),
+                      backgroundImage: photoUrl.isNotEmpty
+                          ? NetworkImage(photoUrl) : null,
+                      child: photoUrl.isEmpty
+                          ? Text(name[0].toUpperCase(),
+                              style: const TextStyle(
+                                  color: AppColors.primary, fontWeight: FontWeight.bold))
+                          : null,
+                    ),
+                    if (online) Positioned(right: 0, bottom: 0,
+                      child: Container(
+                        width: 12, height: 12,
+                        decoration: BoxDecoration(
+                          color: Colors.green, shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 2),
+                        ),
+                      )),
+                  ]),
+                  title: Text(name,
+                      style: const TextStyle(fontWeight: FontWeight.w600)),
+                  subtitle: StreamBuilder<QuerySnapshot>(
+                    stream: _db.collection('private_chats')
+                        .doc(chatId)
+                        .collection('messages')
+                        .orderBy('createdAt', descending: true)
+                        .limit(1)
+                        .snapshots(),
+                    builder: (_, snap) {
+                      if (!snap.hasData || snap.data!.docs.isEmpty) {
+                        return const Text('Envoyer un message...',
+                            style: TextStyle(color: AppColors.textGrey));
+                      }
+                      final msg = snap.data!.docs.first.data() as Map<String, dynamic>;
+                      return Text(msg['text'] ?? '',
+                          maxLines: 1, overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(color: AppColors.textGrey));
+                    },
+                  ),
+                  trailing: online
+                      ? Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: Colors.green.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Text('En ligne',
+                              style: TextStyle(color: Colors.green, fontSize: 11)))
+                      : const Icon(Icons.arrow_forward_ios,
+                          size: 14, color: AppColors.textGrey),
+                );
+              },
+            );
+          },
         )),
+      ]),
+    );
+  }
+}
+
+// ═══════════════════════════════════════
+// PRIVATE CHAT SCREEN
+// ═══════════════════════════════════════
+class PrivateChatScreen extends StatefulWidget {
+  final String chatId, otherUserId, otherUserName;
+  const PrivateChatScreen({
+    super.key,
+    required this.chatId,
+    required this.otherUserId,
+    required this.otherUserName,
+  });
+  @override
+  State<PrivateChatScreen> createState() => _PrivateChatScreenState();
+}
+
+class _PrivateChatScreenState extends State<PrivateChatScreen> {
+  final _ctrl   = TextEditingController();
+  final _scroll = ScrollController();
+
+  Future<void> _send() async {
+    if (_ctrl.text.trim().isEmpty) return;
+    final realName = await getRealName();
+    final user = FirebaseAuth.instance.currentUser;
+    final text = _ctrl.text.trim();
+    _ctrl.clear();
+
+    await _db.collection('private_chats')
+        .doc(widget.chatId)
+        .collection('messages')
+        .add({
+      'text':       text,
+      'senderId':   user?.uid,
+      'senderName': realName,
+      'createdAt':  FieldValue.serverTimestamp(),
+      'read':       false,
+    });
+
+    await _db.collection('private_chats').doc(widget.chatId).set({
+      'lastMessage':  text,
+      'lastTime':     FieldValue.serverTimestamp(),
+      'participants': [user?.uid, widget.otherUserId],
+    }, SetOptions(merge: true));
+
+    await _db.collection('notifications').add({
+      'uid':     widget.otherUserId,
+      'message': '\$realName t\'a envoyé un message 💬',
+      'read':    false,
+      'time':    FieldValue.serverTimestamp(),
+    });
+
+    Future.delayed(const Duration(milliseconds: 100), () {
+      if (_scroll.hasClients) {
+        _scroll.animateTo(_scroll.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final myUid = FirebaseAuth.instance.currentUser?.uid;
+    return Scaffold(
+      appBar: AppBar(
+        title: Row(children: [
+          CircleAvatar(
+            radius: 16,
+            backgroundColor: Colors.white.withValues(alpha: 0.3),
+            child: Text(widget.otherUserName[0].toUpperCase(),
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+          ),
+          const SizedBox(width: 10),
+          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(widget.otherUserName,
+                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+            StreamBuilder<DocumentSnapshot>(
+              stream: _db.collection('users').doc(widget.otherUserId).snapshots(),
+              builder: (_, snap) {
+                final online = (snap.data?.data() as Map?)?['online'] ?? false;
+                return Row(children: [
+                  Container(width: 6, height: 6,
+                      decoration: BoxDecoration(
+                          color: online ? Colors.greenAccent : Colors.grey,
+                          shape: BoxShape.circle)),
+                  const SizedBox(width: 4),
+                  Text(online ? 'En ligne' : 'Hors ligne',
+                      style: const TextStyle(fontSize: 10, color: Colors.white70)),
+                ]);
+              },
+            ),
+          ]),
+        ]),
+      ),
+      body: Column(children: [
+        Expanded(child: StreamBuilder<QuerySnapshot>(
+          stream: _db.collection('private_chats')
+              .doc(widget.chatId)
+              .collection('messages')
+              .orderBy('createdAt')
+              .snapshots(),
+          builder: (_, snap) {
+            if (!snap.hasData) return const Center(child: CircularProgressIndicator());
+            final docs = snap.data!.docs;
+            if (docs.isEmpty) return Center(
+              child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                CircleAvatar(radius: 40,
+                    backgroundColor: AppColors.primary.withValues(alpha: 0.1),
+                    child: Text(widget.otherUserName[0].toUpperCase(),
+                        style: const TextStyle(fontSize: 32, color: AppColors.primary, fontWeight: FontWeight.bold))),
+                const SizedBox(height: 16),
+                Text('Conversation avec \${widget.otherUserName}',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                const SizedBox(height: 8),
+                const Text('Envoie le premier message ! 👋',
+                    style: TextStyle(color: AppColors.textGrey)),
+              ]),
+            );
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (_scroll.hasClients) _scroll.jumpTo(_scroll.position.maxScrollExtent);
+            });
+            return ListView.builder(
+              controller: _scroll,
+              padding: const EdgeInsets.all(12),
+              itemCount: docs.length,
+              itemBuilder: (_, i) {
+                final data = docs[i].data() as Map<String, dynamic>;
+                final isMe = data['senderId'] == myUid;
+                final ts   = data['createdAt'] as Timestamp?;
+                final time = ts != null
+                    ? '\${ts.toDate().hour}:\${ts.toDate().minute.toString().padLeft(2, '0')}'
+                    : '';
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(
+                    mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      if (!isMe) ...[
+                        CircleAvatar(radius: 14,
+                            backgroundColor: AppColors.primary.withValues(alpha: 0.2),
+                            child: Text(widget.otherUserName[0].toUpperCase(),
+                                style: const TextStyle(fontSize: 11, color: AppColors.primary, fontWeight: FontWeight.bold))),
+                        const SizedBox(width: 8),
+                      ],
+                      Column(
+                        crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.65),
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                            decoration: BoxDecoration(
+                              color: isMe ? AppColors.primary : Theme.of(context).colorScheme.surface,
+                              borderRadius: BorderRadius.only(
+                                topLeft:     const Radius.circular(18),
+                                topRight:    const Radius.circular(18),
+                                bottomLeft:  Radius.circular(isMe ? 18 : 4),
+                                bottomRight: Radius.circular(isMe ? 4 : 18),
+                              ),
+                              border: isMe ? null : Border.all(color: AppColors.border),
+                            ),
+                            child: Text(data['text'] ?? '',
+                                style: TextStyle(color: isMe ? Colors.white : null, fontSize: 14)),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2, left: 4, right: 4),
+                            child: Row(children: [
+                              Text(time, style: const TextStyle(fontSize: 10, color: AppColors.textGrey)),
+                              if (isMe) ...[
+                                const SizedBox(width: 4),
+                                Icon(
+                                  (data['read'] ?? false) ? Icons.done_all : Icons.done,
+                                  size: 12,
+                                  color: (data['read'] ?? false) ? Colors.blue : AppColors.textGrey,
+                                ),
+                              ],
+                            ]),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                );
+              },
+            );
+          },
+        )),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surface,
+              border: Border(top: BorderSide(color: AppColors.border))),
+          child: Row(children: [
+            Expanded(child: TextField(
+              controller: _ctrl,
+              decoration: InputDecoration(
+                hintText: 'Message...',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(25), borderSide: BorderSide.none),
+                filled: true, fillColor: AppColors.lightBg,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              ),
+              onSubmitted: (_) => _send(),
+            )),
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: _send,
+              child: Container(
+                width: 44, height: 44,
+                decoration: const BoxDecoration(color: AppColors.primary, shape: BoxShape.circle),
+                child: const Icon(Icons.send, color: Colors.white, size: 20),
+              ),
+            ),
+          ]),
+        ),
       ]),
     );
   }
